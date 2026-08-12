@@ -2,13 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#101a2b">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Livro-Caixa">
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Livro-Caixa — Gestão Financeira Pessoal</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -539,19 +533,6 @@ h2.block-title span.tag{
 /* ===== LAYOUT DESKTOP ESTÁVEL ===== */
 html,body{width:100%;min-width:0;margin:0;padding:0;}
 body{overflow-x:hidden;}
-/* Ajustes para iPhone/iPad (área segura do notch e barra inferior) */
-@supports(padding: max(0px)){
-  .main{padding-left:max(40px, env(safe-area-inset-left));
-        padding-right:max(40px, env(safe-area-inset-right));
-        padding-bottom:max(70px, env(safe-area-inset-bottom));}
-  .sidebar{padding-top:max(26px, env(safe-area-inset-top));
-           padding-bottom:max(26px, env(safe-area-inset-bottom));}
-}
-@media(max-width:880px){
-  .main{padding-left:max(16px, env(safe-area-inset-left));
-        padding-right:max(16px, env(safe-area-inset-right));
-        padding-bottom:max(60px, env(safe-area-inset-bottom));}
-}
 .app{display:block;width:100%;min-height:100vh;}
 .sidebar{
   position:fixed;left:0;top:0;bottom:0;width:248px;height:100vh;
@@ -627,7 +608,7 @@ body{overflow-x:hidden;}
 
       <div class="month-filter">
         <label>Visão do mês</label>
-        <input type="month" id="dashboardMonth" onchange="renderAll()">
+        <input type="month" id="dashboardMonth" onchange="setControlMonth(this.value)">
       </div>
       <div class="stat-grid">
         <div class="stat-card"><div class="eyebrow"><span class="dot bg-green"></span>Receitas recebidas</div><div class="value c-green" id="statReceitas">R$ 0,00</div><div class="foot" id="statReceitasFoot">0 lançamento(s)</div></div>
@@ -666,6 +647,10 @@ body{overflow-x:hidden;}
           <div class="sub">Suas contas fixas e avulsas do mês</div>
         </div>
         <div class="topbar-actions">
+          <div class="month-filter" style="margin:0;">
+            <label for="contasMonth">Mês</label>
+            <input type="month" id="contasMonth" onchange="setControlMonth(this.value)">
+          </div>
           <button class="btn btn-gold" onclick="openGastoModal()">+ Gasto de hoje</button>
           <button class="btn btn-primary" onclick="openContaModal()">+ Nova conta</button>
         </div>
@@ -845,6 +830,11 @@ body{overflow-x:hidden;}
       <div class="field">
         <label>Valor (R$)</label>
         <input type="number" id="contaValor" min="0" step="0.01" placeholder="0,00">
+      </div>
+      <div class="field">
+        <label>Data de início / vencimento</label>
+        <input type="date" id="contaData">
+        <small style="color:var(--paper-text-dim)">Para recorrente, começa a partir deste mês.</small>
       </div>
       <div class="field">
         <label>Dia do vencimento</label>
@@ -1035,7 +1025,14 @@ const STORAGE_KEY = 'livroCaixa_v1';
 let state = loadState();
 if(!Array.isArray(state.receitas)) state.receitas = [];
 state.contas = Array.isArray(state.contas) ? state.contas : [];
-state.contas.forEach(c=>{ if(!c.data) c.data = todayISO(); });
+state.contas.forEach(c=>{
+  if(!c.data) c.data = todayISO();
+  if(!c.statusPorMes || typeof c.statusPorMes!=='object') c.statusPorMes={};
+  // Migração segura: preserva o status antigo somente no mês atual.
+  // A partir daí, cada mês começa como pendente até ser pago naquele mês.
+  const mesAtual=currentMonthKey();
+  if(!Object.prototype.hasOwnProperty.call(c.statusPorMes,mesAtual) && c.status) c.statusPorMes[mesAtual]=c.status;
+});
 state.dividas = Array.isArray(state.dividas) ? state.dividas : [];
 state.investimentos = Array.isArray(state.investimentos) ? state.investimentos : [];
 
@@ -1161,9 +1158,44 @@ function renderReceitas(){
   holder.innerHTML=`<table class="ledger"><thead><tr><th>Receita</th><th>Tipo</th><th>Origem</th><th>Data</th><th class="num">Valor</th><th>Tipo</th><th></th></tr></thead><tbody>${ordered.map(r=>`<tr><td>${escapeHtml(r.nome)}${r.obs?`<div style="font-size:11px;color:var(--paper-text-dim)">${escapeHtml(r.obs)}</div>`:''}</td><td><span class="chip">${escapeHtml(r.tipo)}</span></td><td>${escapeHtml(r.origem||'—')}</td><td>${new Date(r.data+'T00:00:00').toLocaleDateString('pt-BR')}</td><td class="num c-green">${fmtBRL(r.valor)}</td><td>${r.recorrente?'<span class="chip">recorrente</span>':'<span class="chip">avulsa</span>'}</td><td><div class="row-actions"><button class="icon-btn" title="Editar" onclick="openReceitaModal('${r.id}')">✎</button><button class="icon-btn warn" title="Excluir" onclick="deleteReceita('${r.id}')">✕</button></div></td></tr>`).join('')}</tbody><tfoot><tr><td colspan="3">Total cadastrado</td><td></td><td class="num c-green">${fmtBRL(total)}</td><td colspan="2"></td></tr></tfoot></table>`;
 }
 function getDashboardMonth(){return document.getElementById('dashboardMonth')?.value || currentMonthKey();}
+function getControlMonth(){
+  return document.getElementById('dashboardMonth')?.value || document.getElementById('contasMonth')?.value || currentMonthKey();
+}
+function setControlMonth(month){
+  const m = month || currentMonthKey();
+  const d=document.getElementById('dashboardMonth'); if(d) d.value=m;
+  const c=document.getElementById('contasMonth'); if(c) c.value=m;
+  renderAll();
+}
 function inMonth(date,month){return String(date||'').slice(0,7)===month;}
-function monthContas(month){return state.contas.filter(c=>{if(c.recorrente)return true;return inMonth(c.data,month);});}
-function monthReceitas(month){return state.receitas.filter(r=>r.recorrente || inMonth(r.data,month));}
+function ensureContaMensal(c){
+  if(!c.statusPorMes || typeof c.statusPorMes!=='object') c.statusPorMes={};
+  return c.statusPorMes;
+}
+function getContaStatus(c,month){
+  // Contas avulsas existem somente no mês da data de lançamento.
+  if(!c.recorrente && !inMonth(c.data,month)) return null;
+  const map=ensureContaMensal(c);
+  if(Object.prototype.hasOwnProperty.call(map,month)) return map[month];
+  // Compatibilidade: uma conta antiga marcada como paga fica paga apenas no mês em que foi marcada.
+  if(!c.recorrente && inMonth(c.data,month)) return c.status || 'pendente';
+  return 'pendente';
+}
+function monthKeyFromDate(iso){
+  if(!iso) return '';
+  const m=String(iso).match(/^(\d{4}-\d{2})/);
+  return m ? m[1] : '';
+}
+function startsOnOrBeforeMonth(item, month){
+  const inicio=monthKeyFromDate(item.data);
+  return !inicio || !month || inicio<=month;
+}
+function monthContas(month){
+  return state.contas.filter(c => c.recorrente ? startsOnOrBeforeMonth(c,month) : inMonth(c.data,month));
+}
+function monthReceitas(month){
+  return state.receitas.filter(r => r.recorrente ? startsOnOrBeforeMonth(r,month) : inMonth(r.data,month));
+}
 function monthInvestimentos(month){return state.investimentos.flatMap(inv=>ensureHistorico(inv).filter(h=>h.tipo==='aporte' && h.valor>0 && inMonth(h.data,month)));}
 
 /* ======================================================================
@@ -1176,7 +1208,8 @@ function openContaModal(id=null){
   document.getElementById('contaNome').value = c ? c.nome : '';
   document.getElementById('contaCategoria').value = c ? c.categoria : 'Moradia';
   document.getElementById('contaValor').value = c ? c.valor : '';
-  document.getElementById('contaDia').value = c ? c.dia : '';
+  document.getElementById('contaData').value = c ? (c.data || todayISO()) : todayISO();
+  document.getElementById('contaDia').value = c ? c.dia : new Date().getDate();
   document.getElementById('contaStatus').value = c ? c.status : 'pendente';
   document.getElementById('contaRecorrente').checked = c ? c.recorrente : true;
   document.getElementById('contaObs').value = c ? (c.obs||'') : '';
@@ -1190,9 +1223,10 @@ function saveConta(){
     toast('Preencha nome, valor e um dia de vencimento válido (1–31).', 'err'); return;
   }
   const id = document.getElementById('contaId').value;
+  const dataInicio = document.getElementById('contaData').value || todayISO();
   const data = {
     nome, valor, dia,
-    data: (id ? (state.contas.find(x=>x.id===id)?.data || todayISO()) : todayISO()),
+    data: dataInicio,
     categoria: document.getElementById('contaCategoria').value,
     status: document.getElementById('contaStatus').value,
     recorrente: document.getElementById('contaRecorrente').checked,
@@ -1214,7 +1248,12 @@ function deleteConta(id){
 }
 function toggleContaStatus(id){
   const c = state.contas.find(x=>x.id===id);
-  c.status = c.status==='pago' ? 'pendente' : 'pago';
+  if(!c) return;
+  const month=getControlMonth();
+  const current=getContaStatus(c,month);
+  ensureContaMensal(c)[month] = current==='pago' ? 'pendente' : 'pago';
+  // Mantém o campo legado coerente para contas avulsas, sem contaminar outros meses.
+  if(!c.recorrente && inMonth(c.data,month)) c.status=ensureContaMensal(c)[month];
   saveState(); renderAll();
 }
 
@@ -1223,6 +1262,7 @@ function openGastoModal(){
   document.getElementById('gastoValor').value = '';
   document.getElementById('gastoDesc').value = '';
   document.getElementById('gastoCategoria').value = 'Alimentação';
+  document.getElementById('gastoData').value = todayISO();
   openModal('modalGasto');
 }
 function saveGastoRapido(){
@@ -1230,17 +1270,19 @@ function saveGastoRapido(){
   if(!isFinite(valor) || valor<=0){ toast('Informe quanto você gastou.', 'err'); return; }
   const desc = document.getElementById('gastoDesc').value.trim();
   const categoria = document.getElementById('gastoCategoria').value;
-  const hoje = new Date();
+  const dataGasto = document.getElementById('gastoData').value || todayISO();
+  const dataParts = dataGasto.split('-');
+  const diaGasto = parseInt(dataParts[2],10) || new Date().getDate();
   state.contas.push({
     id:uid(),
     nome: desc || 'Gasto do dia',
     categoria,
     valor,
-    dia: hoje.getDate(),
+    dia: diaGasto,
     status:'pago',
     recorrente:false,
-    data: hoje.toISOString().slice(0,10),
-    obs:'Lançado como gasto rápido em ' + hoje.toLocaleDateString('pt-BR'),
+    data: dataGasto,
+    obs:'Lançado como gasto rápido em ' + new Date(dataGasto+'T00:00:00').toLocaleDateString('pt-BR'),
   });
   saveState(); closeModal('modalGasto'); renderAll();
   toast('Gasto registrado em Contas.');
@@ -1248,23 +1290,31 @@ function saveGastoRapido(){
 
 function renderContas(){
   const holder = document.getElementById('contasHolder');
+  const month=getControlMonth();
+  const input=document.getElementById('contasMonth'); if(input && input.value!==month) input.value=month;
   if(state.contas.length===0){
     holder.innerHTML = `<div class="empty"><div class="glyph">▤</div><h3>Nenhuma conta cadastrada</h3>
       <p>Adicione suas contas fixas (aluguel, internet, cartão...) para acompanhar o que vence todo mês.</p>
       <button class="btn btn-primary" onclick="openContaModal()">+ Nova conta</button></div>`;
     return;
   }
-  const ordered = [...state.contas].sort((a,b)=>a.dia-b.dia);
+  const contasDoMes=monthContas(month);
+  if(!contasDoMes.length){
+    holder.innerHTML = `<div class="empty"><div class="glyph">▤</div><h3>Nenhuma conta neste mês</h3><p>Não há contas avulsas ou recorrentes cadastradas para este período.</p><button class="btn btn-primary" onclick="openContaModal()">+ Nova conta</button></div>`;
+    return;
+  }
+  const ordered = [...contasDoMes].sort((a,b)=>a.dia-b.dia);
   let totalPendente=0, totalPago=0;
   const rows = ordered.map(c=>{
-    if(c.status==='pago') totalPago+=c.valor; else totalPendente+=c.valor;
+    const status=getContaStatus(c,month) || 'pendente';
+    if(status==='pago') totalPago+=c.valor; else totalPendente+=c.valor;
     return `<tr>
       <td>${escapeHtml(c.nome)}${c.obs?`<div style="font-size:11px;color:var(--paper-text-dim)">${escapeHtml(c.obs)}</div>`:''}</td>
       <td><span class="chip">${escapeHtml(c.categoria)}</span></td>
       <td class="num">${fmtBRL(c.valor)}</td>
       <td class="num">dia ${c.dia}</td>
       <td>${c.recorrente?'<span class="chip">recorrente</span>':'<span class="chip">avulsa</span>'}</td>
-      <td><button class="badge status-toggle ${c.status==='pago'?'badge-ok':'badge-pending'}" onclick="toggleContaStatus('${c.id}')">${c.status==='pago'?'✓ Pago':'⏳ Pendente'}</button></td>
+      <td><button class="badge status-toggle ${status==='pago'?'badge-ok':'badge-pending'}" onclick="toggleContaStatus('${c.id}')">${status==='pago'?'✓ Pago':'⏳ Pendente'}</button></td>
       <td><div class="row-actions">
         <button class="icon-btn" title="Editar" onclick="openContaModal('${c.id}')">✎</button>
         <button class="icon-btn warn" title="Excluir" onclick="deleteConta('${c.id}')">✕</button>
@@ -1272,12 +1322,13 @@ function renderContas(){
     </tr>`;
   }).join('');
   holder.innerHTML = `
+    <div class="month-summary" style="margin-bottom:12px;"><div><div class="ms-title">Contas de ${new Date(Number(month.slice(0,4)),Number(month.slice(5,7))-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</div><div style="font-size:11px;color:var(--paper-text-dim);margin-top:3px">O status de cada conta é independente em cada mês.</div></div></div>
     <table class="ledger">
       <thead><tr><th>Conta</th><th>Categoria</th><th class="num">Valor</th><th class="num">Venc.</th><th>Tipo</th><th>Status</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot>
-        <tr><td colspan="2">Pendente este mês</td><td class="num c-red" colspan="5">${fmtBRL(totalPendente)}</td></tr>
-        <tr><td colspan="2">Pago este mês</td><td class="num c-green" colspan="5">${fmtBRL(totalPago)}</td></tr>
+        <tr><td colspan="2">Pendente neste mês</td><td class="num c-red" colspan="5">${fmtBRL(totalPendente)}</td></tr>
+        <tr><td colspan="2">Pago neste mês</td><td class="num c-green" colspan="5">${fmtBRL(totalPago)}</td></tr>
       </tfoot>
     </table>`;
 }
@@ -1296,7 +1347,8 @@ function openDividaModal(id=null){
   document.getElementById('dividaValorParcela').value = d ? d.valorParcela : '';
   document.getElementById('dividaParcelasTotal').value = d ? d.parcelasTotal : '';
   document.getElementById('dividaParcelasPagas').value = d ? d.parcelasPagas : 0;
-  document.getElementById('dividaDia').value = d ? d.dia : '';
+  document.getElementById('dividaData').value = d ? (d.data || todayISO()) : todayISO();
+  document.getElementById('dividaDia').value = d ? d.dia : new Date().getDate();
   openModal('modalDivida');
 }
 function saveDivida(){
@@ -1309,8 +1361,10 @@ function saveDivida(){
     toast('Preencha nome, valor da parcela, total de parcelas e dia de vencimento.', 'err'); return;
   }
   const id = document.getElementById('dividaId').value;
+  const dataInicio = document.getElementById('dividaData').value || todayISO();
   const data = {
     nome, valorParcela, parcelasTotal,
+    data: dataInicio,
     parcelasPagas: Math.min(parcelasPagas, parcelasTotal),
     taxa: parseFloat(document.getElementById('dividaTaxa').value)||0,
     tipo: document.getElementById('dividaTipo').value,
@@ -1547,9 +1601,10 @@ function renderPainel(){
   const monthName=new Date(yy,mm-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
   document.getElementById('hojeLabel').textContent = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
   const input=document.getElementById('dashboardMonth'); if(input && input.value!==month) input.value=month;
+  const contasInput=document.getElementById('contasMonth'); if(contasInput && contasInput.value!==month) contasInput.value=month;
   const receitas=monthReceitas(month);
   const contas=monthContas(month);
-  const gastos=contas.filter(c=>c.status==='pago');
+  const gastos=contas.filter(c=>getContaStatus(c,month)==='pago');
   const totalReceitas=receitas.reduce((s,r)=>s+r.valor,0);
   const totalGastos=gastos.reduce((s,c)=>s+c.valor,0);
   const aportes=monthInvestimentos(month);
@@ -1557,7 +1612,7 @@ function renderPainel(){
   const saldoAposGastos=totalReceitas-totalGastos;
   const saldoLivre=saldoAposGastos-totalAportes;
   const totalInvestido=state.investimentos.reduce((s,i)=>s+i.saldo,0);
-  const totalContasPend=contas.filter(c=>c.status!=='pago').reduce((s,c)=>s+c.valor,0);
+  const totalContasPend=contas.filter(c=>getContaStatus(c,month)!=='pago').reduce((s,c)=>s+c.valor,0);
   const totalDividas=state.dividas.reduce((s,d)=>s+(d.parcelasTotal-d.parcelasPagas)*d.valorParcela,0);
   const patrimonio=totalInvestido-totalDividas;
   document.getElementById('statReceitas').textContent=fmtBRL(totalReceitas);
@@ -1578,7 +1633,7 @@ function renderPainel(){
   if(total<=0) donutHolder.innerHTML='<div class="empty" style="padding:20px 0;"><p style="margin:0;">Cadastre receitas e gastos para acompanhar o mês.</p></div>';
   else{let acc=0;const R=58,C=2*Math.PI*R;const circles=parts.filter(p=>p.value>0).map(p=>{const dash=p.value/total*C;const offset=C-acc;acc+=dash;return `<circle r="${R}" cx="80" cy="80" fill="none" stroke="${p.color}" stroke-width="20" stroke-dasharray="${dash} ${C-dash}" stroke-dashoffset="${offset}" transform="rotate(-90 80 80)" stroke-linecap="butt"/>`;}).join('');donutHolder.innerHTML=`<svg width="160" height="160" viewBox="0 0 160 160">${circles}<circle r="38" cx="80" cy="80" fill="var(--paper)"/></svg><div class="donut-legend">${parts.map(p=>`<div class="li"><span class="lft"><span class="sw" style="background:${p.color}"></span>${p.label}</span><b>${fmtBRL(p.value)}</b></div>`).join('')}</div>`;}
   const upcomingHolder=document.getElementById('upcomingList'); const todayDay=new Date().getDate();
-  const items=[...contas.filter(c=>c.status!=='pago').map(c=>({nome:c.nome,sub:c.categoria,dia:c.dia,valor:c.valor})),...state.dividas.filter(d=>d.parcelasPagas<d.parcelasTotal).map(d=>({nome:d.nome,sub:d.tipo,dia:d.dia,valor:d.valorParcela}))].sort((a,b)=>{const da=a.dia>=todayDay?a.dia:a.dia+31,db=b.dia>=todayDay?b.dia:b.dia+31;return da-db;}).slice(0,7);
+  const items=[...contas.filter(c=>getContaStatus(c,month)!=='pago').map(c=>({nome:c.nome,sub:c.categoria,dia:c.dia,valor:c.valor})),...state.dividas.filter(d=>d.parcelasPagas<d.parcelasTotal).map(d=>({nome:d.nome,sub:d.tipo,dia:d.dia,valor:d.valorParcela}))].sort((a,b)=>{const da=a.dia>=todayDay?a.dia:a.dia+31,db=b.dia>=todayDay?b.dia:b.dia+31;return da-db;}).slice(0,7);
   upcomingHolder.innerHTML=items.length?items.map(it=>`<li><span class="day">${it.dia}</span><span class="info"><span class="nm">${escapeHtml(it.nome)}</span><span class="ct">${escapeHtml(it.sub)}</span></span><span class="amt">${fmtBRL(it.valor)}</span></li>`).join(''):'<div class="empty" style="padding:20px 0;"><p style="margin:0;">Nenhum vencimento pendente por aqui. 🎉</p></div>';
 }
 
@@ -1831,16 +1886,6 @@ try{
 window.addEventListener('error', function(e){
   console.error('Erro não tratado', e.error || e.message);
 });
-</script>
-<script>
-// Ativa o modo PWA quando a aplicação estiver sendo aberta por HTTPS.
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(err =>
-      console.warn('Não foi possível ativar o modo offline:', err)
-    );
-  });
-}
 </script>
 </body>
 </html>
