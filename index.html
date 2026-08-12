@@ -833,7 +833,7 @@ body{overflow-x:hidden;}
       </div>
       <div class="field">
         <label>Data de início / vencimento</label>
-        <input type="date" id="contaData">
+        <input type="date" id="contaData" onchange="syncDayFromDate('contaData','contaDia')">
         <small style="color:var(--paper-text-dim)">Para recorrente, começa a partir deste mês.</small>
       </div>
       <div class="field">
@@ -891,8 +891,14 @@ body{overflow-x:hidden;}
         <input type="number" id="dividaParcelasPagas" min="0" step="1" value="0">
       </div>
       <div class="field">
+        <label>Data de início / primeira parcela</label>
+        <input type="date" id="dividaData" onchange="syncDayFromDate('dividaData','dividaDia')">
+        <small style="color:var(--paper-text-dim)">Define a partir de qual mês a dívida começa.</small>
+      </div>
+      <div class="field">
         <label>Dia do vencimento</label>
         <input type="number" id="dividaDia" min="1" max="31" placeholder="Ex: 5">
+        <small style="color:var(--paper-text-dim)">É preenchido automaticamente pela data, mas você pode ajustar.</small>
       </div>
     </div>
     <div class="form-actions">
@@ -931,6 +937,11 @@ body{overflow-x:hidden;}
       <div class="field">
         <label>Aporte mensal planejado (R$)</label>
         <input type="number" id="investAporte" min="0" step="0.01" placeholder="0,00">
+      </div>
+      <div class="field">
+        <label>Data de início / saldo inicial</label>
+        <input type="date" id="investData">
+        <small style="color:var(--paper-text-dim)">Usada para registrar o saldo inicial no mês correto.</small>
       </div>
     </div>
     <div class="form-actions">
@@ -979,7 +990,7 @@ body{overflow-x:hidden;}
 <!-- ============================= MODAL: GASTO RÁPIDO DO DIA ============================= -->
 <div class="modal-overlay" id="modalGasto">
   <div class="modal">
-    <h3><span>Quanto você gastou hoje?</span><button class="close" onclick="closeModal('modalGasto')">✕</button></h3>
+    <h3><span>Registrar gasto</span><button class="close" onclick="closeModal('modalGasto')">✕</button></h3>
     <div class="form-grid">
       <div class="field full">
         <label>Valor gasto (R$)</label>
@@ -988,6 +999,10 @@ body{overflow-x:hidden;}
       <div class="field full">
         <label>Com o quê? (opcional)</label>
         <input type="text" id="gastoDesc" placeholder="Ex: Almoço, Uber, mercado...">
+      </div>
+      <div class="field full">
+        <label>Data do gasto</label>
+        <input type="date" id="gastoData">
       </div>
       <div class="field full">
         <label>Categoria</label>
@@ -999,7 +1014,7 @@ body{overflow-x:hidden;}
       </div>
     </div>
     <p style="font-size:12px; color:var(--paper-text-dim); margin:10px 0 0;">
-      Isso cria uma conta avulsa já marcada como paga, na aba Contas, com a data de hoje.
+      Isso cria uma conta avulsa já marcada como paga, na aba Contas, usando a data informada.
     </p>
     <div class="form-actions">
       <button class="btn btn-ghost" onclick="closeModal('modalGasto')">Cancelar</button>
@@ -1201,6 +1216,15 @@ function monthInvestimentos(month){return state.investimentos.flatMap(inv=>ensur
 /* ======================================================================
    CONTAS
    ====================================================================== */
+
+function syncDayFromDate(dateId, dayId){
+  const el=document.getElementById(dateId);
+  const day=document.getElementById(dayId);
+  if(!el || !day || !el.value) return;
+  const parts=el.value.split('-');
+  if(parts.length===3){ const n=parseInt(parts[2],10); if(n>=1 && n<=31) day.value=n; }
+}
+
 function openContaModal(id=null){
   const c = id ? state.contas.find(x=>x.id===id) : null;
   document.getElementById('modalContaTitle').textContent = c ? 'Editar conta' : 'Nova conta';
@@ -1210,6 +1234,7 @@ function openContaModal(id=null){
   document.getElementById('contaValor').value = c ? c.valor : '';
   document.getElementById('contaData').value = c ? (c.data || todayISO()) : todayISO();
   document.getElementById('contaDia').value = c ? c.dia : new Date().getDate();
+  if(c && c.data){ const parts=c.data.split('-'); if(parts.length===3) document.getElementById('contaDia').value=parseInt(parts[2],10)||c.dia; }
   document.getElementById('contaStatus').value = c ? c.status : 'pendente';
   document.getElementById('contaRecorrente').checked = c ? c.recorrente : true;
   document.getElementById('contaObs').value = c ? (c.obs||'') : '';
@@ -1224,8 +1249,11 @@ function saveConta(){
   }
   const id = document.getElementById('contaId').value;
   const dataInicio = document.getElementById('contaData').value || todayISO();
+  const dataParts = dataInicio.split('-');
+  const diaData = parseInt(dataParts[2],10);
+  const diaFinal = (diaData>=1 && diaData<=31) ? diaData : dia;
   const data = {
-    nome, valor, dia,
+    nome, valor, dia:diaFinal,
     data: dataInicio,
     categoria: document.getElementById('contaCategoria').value,
     status: document.getElementById('contaStatus').value,
@@ -1349,6 +1377,7 @@ function openDividaModal(id=null){
   document.getElementById('dividaParcelasPagas').value = d ? d.parcelasPagas : 0;
   document.getElementById('dividaData').value = d ? (d.data || todayISO()) : todayISO();
   document.getElementById('dividaDia').value = d ? d.dia : new Date().getDate();
+  if(d && d.data){ const parts=d.data.split('-'); if(parts.length===3) document.getElementById('dividaDia').value=parseInt(parts[2],10)||d.dia; }
   openModal('modalDivida');
 }
 function saveDivida(){
@@ -1362,13 +1391,16 @@ function saveDivida(){
   }
   const id = document.getElementById('dividaId').value;
   const dataInicio = document.getElementById('dividaData').value || todayISO();
+  const dataParts = dataInicio.split('-');
+  const diaData = parseInt(dataParts[2],10);
+  const diaFinal = (diaData>=1 && diaData<=31) ? diaData : dia;
   const data = {
     nome, valorParcela, parcelasTotal,
     data: dataInicio,
+    dia: diaFinal,
     parcelasPagas: Math.min(parcelasPagas, parcelasTotal),
     taxa: parseFloat(document.getElementById('dividaTaxa').value)||0,
     tipo: document.getElementById('dividaTipo').value,
-    dia,
   };
   if(id){
     Object.assign(state.dividas.find(x=>x.id===id), data);
@@ -1446,6 +1478,7 @@ function openInvestModal(id=null){
   document.getElementById('investSaldo').value = inv ? inv.saldo : '';
   document.getElementById('investTaxa').value = inv ? inv.taxa : '';
   document.getElementById('investAporte').value = inv ? inv.aporte : '';
+  document.getElementById('investData').value = inv ? (inv.data || todayISO()) : todayISO();
   document.getElementById('investSaldoHint').textContent = inv
     ? 'Alterar aqui não fica registrado no histórico. Para lançar um depósito ou resgate, use "+ Aporte" no card.'
     : 'Se já existe saldo nessa aplicação, informe aqui — ele entra como o depósito inicial no histórico.';
@@ -1456,16 +1489,17 @@ function saveInvest(){
   const saldo = parseFloat(document.getElementById('investSaldo').value)||0;
   const taxa = parseFloat(document.getElementById('investTaxa').value)||0;
   const aporte = parseFloat(document.getElementById('investAporte').value)||0;
+  const dataInvest = document.getElementById('investData').value || todayISO();
   if(!nome){ toast('Dê um nome para o investimento.', 'err'); return; }
   const id = document.getElementById('investId').value;
-  const data = { nome, tipo: document.getElementById('investTipo').value, saldo, taxa, aporte };
+  const data = { nome, tipo: document.getElementById('investTipo').value, saldo, taxa, aporte, data:dataInvest };
   if(id){
     Object.assign(state.investimentos.find(x=>x.id===id), data);
     toast('Investimento atualizado.');
   }else{
     const historico = [];
     if(saldo>0){
-      historico.push({id:uid(), data: todayISO(), valor: saldo, tipo:'inicial', obs:'Saldo inicial'});
+      historico.push({id:uid(), data: dataInvest, valor: saldo, tipo:'inicial', obs:'Saldo inicial'});
     }
     state.investimentos.push({id:uid(), ...data, historico});
     toast('Investimento adicionado.');
