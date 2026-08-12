@@ -1,0 +1,11 @@
+{
+  "name": "Livro-Caixa — Gestão Financeira Pessoal",
+  "short_name": "Livro-Caixa",
+  "lang": "pt-BR",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#101a2b",
+  "theme_color": "#101a2b",
+  "description": "Controle financeiro pessoal offline com receitas, gastos, contas, dívidas, investimentos e backups locais."
+}
