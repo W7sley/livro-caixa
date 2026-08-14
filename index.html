@@ -523,13 +523,27 @@ h2.block-title span.tag{
 
 .month-filter{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin:-8px 0 14px;}
 .month-filter label{font-size:11px;text-transform:uppercase;letter-spacing:.7px;font-weight:700;color:var(--ink-text-dim);}
-.month-filter input{background:var(--ink-3);color:var(--ink-text);border:1px solid var(--ink-line);border-radius:8px;padding:8px 10px;font-family:var(--font-mono);}
+.month-filter input, .table-filters select{background:var(--ink-3);color:var(--ink-text);border:1px solid var(--ink-line);border-radius:8px;padding:8px 10px;font-family:var(--font-mono);}
+.table-filters select{font-family:var(--font-body); font-size:13px;}
 .month-summary{margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
 .month-summary .ms-title{font-family:var(--font-display);font-size:17px;font-weight:600;}
 .month-summary .ms-items{display:flex;gap:22px;flex-wrap:wrap;}
 .month-summary .ms-item{font-size:11px;color:var(--paper-text-dim);}
 .month-summary .ms-item b{display:block;font-family:var(--font-mono);font-size:14px;color:var(--paper-text);margin-top:3px;}
 @media(max-width:760px){.month-filter{justify-content:stretch}.month-filter input{flex:1}.month-summary{align-items:flex-start}.month-summary .ms-items{gap:12px;}}
+
+.table-filters{
+  display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:14px;
+  background:var(--paper-2); padding:10px 14px; border-radius:10px; border:1px solid var(--paper-line-2);
+}
+.table-filters label{
+  font-size:11px; text-transform:uppercase; letter-spacing:.6px; font-weight:700; color:var(--paper-text-dim);
+  display:flex; align-items:center; gap:6px;
+}
+.table-filters select{
+  background:var(--paper); color:var(--paper-text); border:1px solid var(--paper-line-2);
+  padding:6px 10px; border-radius:6px; font-size:12.5px;
+}
 
 /* ===== LAYOUT DESKTOP ESTÁVEL ===== */
 html,body{width:100%;min-width:0;margin:0;padding:0;}
@@ -803,7 +817,7 @@ body{overflow-x:hidden;}
       <div class="field"><label>Valor recebido (R$)</label><input type="number" id="receitaValor" min="0" step="0.01" placeholder="0,00"></div>
       <div class="field"><label>Data do recebimento</label><input type="date" id="receitaData"></div>
       <div class="field"><label>Forma / origem</label><input type="text" id="receitaOrigem" placeholder="Ex: Empresa, cliente, Pix..."></div>
-      <label class="checkline"><input type="checkbox" id="receitaRecorrente"> Receita recorrente (repete todo mês)</label>
+      <label class="checkline"><input type="checkbox" id="receitaRecorrente" onchange="toggleReceitaRecorrenteScopeUI()"> Receita recorrente (repete todo mês)</label>
       <div class="field full" id="receitaEscopoWrap" style="display:none;">
         <label>Aplicar esta alteração</label>
         <select id="receitaEscopo">
@@ -859,7 +873,7 @@ body{overflow-x:hidden;}
         <label>Status</label>
         <select id="contaStatus"><option value="pendente">Pendente</option><option value="pago">Pago</option></select>
       </div>
-      <label class="checkline"><input type="checkbox" id="contaRecorrente" checked> Conta recorrente (repete todo mês)</label>
+      <label class="checkline"><input type="checkbox" id="contaRecorrente" checked onchange="toggleContaRecorrenteScopeUI()"> Conta recorrente (repete todo mês)</label>
       <div class="field full" id="contaEscopoWrap" style="display:none;">
         <label>Aplicar esta alteração</label>
         <select id="contaEscopo">
@@ -1061,12 +1075,14 @@ body{overflow-x:hidden;}
    ====================================================================== */
 const STORAGE_KEY = 'livroCaixa_v1';
 let state = loadState();
+
+let contaFilterCategory = 'todas';
+let contaFilterTipo = 'todos';
+
 if(!Array.isArray(state.receitas)) state.receitas = [];
 state.receitas.forEach(r=>{ if(!r.excluidaPorMes || typeof r.excluidaPorMes!=='object') r.excluidaPorMes={}; if(!r.edicoesPorMes || typeof r.edicoesPorMes!=='object') r.edicoesPorMes={}; });
 state.contas = Array.isArray(state.contas) ? state.contas : [];
 state.contas.forEach(c=>{
-  // Compatibilidade com uma versão anterior deste app, que guardava a data
-  // como "dataVencimento" e as exceções por mês num único objeto "overrides".
   if(!c.data && c.dataVencimento) c.data = c.dataVencimento;
   if(!c.data) c.data = todayISO();
   if(!c.dia){ const p=String(c.data).split('-'); if(p.length===3) c.dia=parseInt(p[2],10)||1; }
@@ -1086,8 +1102,6 @@ state.contas.forEach(c=>{
       if(ov.status) c.statusPorMes[mk]=ov.status;
     });
   }
-  // Migração segura: preserva o status antigo somente no mês atual.
-  // A partir daí, cada mês começa como pendente até ser pago naquele mês.
   const mesAtual=currentMonthKey();
   if(!Object.prototype.hasOwnProperty.call(c.statusPorMes,mesAtual) && c.status) c.statusPorMes[mesAtual]=c.status;
 });
@@ -1148,15 +1162,12 @@ function fmtDateShort(dateStr){
   if(!dateStr) return '';
   return new Date(dateStr+'T00:00:00').toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'});
 }
-/* Monta a data do dia informado dentro do mês/ano de "monthKey" (YYYY-MM),
-   ajustando (clamp) para o último dia válido daquele mês. */
 function buildDateForMonth(dayNum, monthKey){
   const [y,m] = monthKey.split('-').map(Number);
   const lastDay = new Date(y, m, 0).getDate();
   const d = Math.min(dayNum||1, lastDay);
   return `${monthKey}-${String(d).padStart(2,'0')}`;
 }
-/* Soma/subtrai N meses a uma data (YYYY-MM-DD), preservando o dia quando possível. */
 function addMonthsToDate(dateStr, delta){
   const parts = dateStr.split('-').map(Number);
   const day = parts[2];
@@ -1175,8 +1186,6 @@ function switchSection(name){
   const target = document.getElementById('sec-' + name);
   if(!target) return;
 
-  // Troca de aba de forma explícita para evitar problemas de renderização
-  // quando a janela está maximizada ou o navegador altera o viewport.
   document.querySelectorAll('.section').forEach(sec => {
     sec.classList.remove('active');
     sec.style.display = 'none';
@@ -1192,7 +1201,6 @@ function switchSection(name){
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('scrim').classList.remove('open');
 
-  // Força o navegador a recalcular o layout depois da troca.
   requestAnimationFrame(() => {
     target.style.display = 'block';
     window.scrollTo({top:0, behavior:'auto'});
@@ -1227,6 +1235,17 @@ function getReceitaEffective(r,month){
   const override=ensureReceitaEdicoes(r)[month];
   return override ? {...r,...override} : r;
 }
+function toggleReceitaRecorrenteScopeUI(){
+  const isRec = document.getElementById('receitaRecorrente').checked;
+  const id = document.getElementById('receitaId').value;
+  const r = id ? state.receitas.find(x=>x.id===id) : null;
+  const escopoWrap = document.getElementById('receitaEscopoWrap');
+  if(r && r.recorrente && isRec){
+    escopoWrap.style.display = '';
+  }else{
+    escopoWrap.style.display = 'none';
+  }
+}
 function openReceitaModal(id=null){
   const month = getControlMonth();
   const r = id ? state.receitas.find(x=>x.id===id) : null;
@@ -1240,13 +1259,9 @@ function openReceitaModal(id=null){
   document.getElementById('receitaOrigem').value = eff ? (eff.origem||'') : '';
   document.getElementById('receitaRecorrente').checked = r ? !!r.recorrente : false;
   document.getElementById('receitaObs').value = eff ? (eff.obs||'') : '';
-  const escopoWrap = document.getElementById('receitaEscopoWrap');
-  if(r && r.recorrente){
-    escopoWrap.style.display = '';
-    document.getElementById('receitaEscopo').value = 'mes';
-  }else{
-    escopoWrap.style.display = 'none';
-  }
+  
+  toggleReceitaRecorrenteScopeUI();
+  if(r && r.recorrente) document.getElementById('receitaEscopo').value = 'mes';
   openModal('modalReceita');
 }
 function saveReceita(){
@@ -1263,7 +1278,23 @@ function saveReceita(){
   if(id){
     const r=state.receitas.find(x=>x.id===id);
     if(!r){toast('Receita não encontrada.','err');return;}
-    if(r.recorrente){
+    
+    // Tratamento de mudança Recorrente <-> Avulsa
+    if(r.recorrente && !recorrente){
+      r.recorrente = false;
+      r.fimEm = month;
+      r.data = data;
+      r.nome = nome; r.valor = valor; r.tipo = tipo; r.origem = origem; r.obs = obs;
+      toast('Receita alterada para avulsa. Ocorrências futuras foram removidas.');
+    } else if(!r.recorrente && recorrente){
+      r.recorrente = true;
+      delete r.fimEm;
+      r.data = data;
+      r.nome = nome; r.valor = valor; r.tipo = tipo; r.origem = origem; r.obs = obs;
+      ensureReceitaEdicoes(r);
+      ensureReceitaExclusoes(r);
+      toast('Receita alterada para recorrente.');
+    } else if(r.recorrente){
       const scope=document.getElementById('receitaEscopo').value;
       if(scope==='sempre'){
         r.nome=nome; r.valor=valor; r.tipo=tipo; r.origem=origem; r.obs=obs;
@@ -1288,7 +1319,6 @@ function saveReceita(){
   }
   saveState();closeModal('modalReceita');renderAll();
 }
-/* Remove a ocorrência de apenas um mês específico, sem afetar os demais meses */
 function removeReceitaMonth(id, month){
   const r = state.receitas.find(x=>x.id===id);
   if(!r) return;
@@ -1400,6 +1430,17 @@ function syncDayFromDate(dateId, dayId){
   const parts=el.value.split('-');
   if(parts.length===3){ const n=parseInt(parts[2],10); if(n>=1 && n<=31) day.value=n; }
 }
+function toggleContaRecorrenteScopeUI(){
+  const isRec = document.getElementById('contaRecorrente').checked;
+  const id = document.getElementById('contaId').value;
+  const c = id ? state.contas.find(x=>x.id===id) : null;
+  const escopoWrap = document.getElementById('contaEscopoWrap');
+  if(c && c.recorrente && isRec){
+    escopoWrap.style.display = '';
+  }else{
+    escopoWrap.style.display = 'none';
+  }
+}
 function openContaModal(id=null){
   const month=getControlMonth();
   const c = id ? state.contas.find(x=>x.id===id) : null;
@@ -1416,13 +1457,9 @@ function openContaModal(id=null){
   document.getElementById('contaStatus').value = c ? (getContaStatus(c,month)||'pendente') : 'pendente';
   document.getElementById('contaRecorrente').checked = c ? !!c.recorrente : true;
   document.getElementById('contaObs').value = eff ? (eff.obs||'') : '';
-  const escopoWrap = document.getElementById('contaEscopoWrap');
-  if(c && c.recorrente){
-    escopoWrap.style.display = '';
-    document.getElementById('contaEscopo').value = 'mes';
-  }else{
-    escopoWrap.style.display = 'none';
-  }
+  
+  toggleContaRecorrenteScopeUI();
+  if(c && c.recorrente) document.getElementById('contaEscopo').value = 'mes';
   openModal('modalConta');
 }
 function saveConta(){
@@ -1446,7 +1483,26 @@ function saveConta(){
   if(id){
     const c=state.contas.find(x=>x.id===id);
     if(!c){toast('Conta não encontrada.','err');return;}
-    if(c.recorrente){
+    
+    // Tratamento de mudança Recorrente <-> Avulsa
+    if(c.recorrente && !recorrente){
+      c.recorrente = false;
+      c.fimEm = month;
+      c.data = dataInicio;
+      c.dia = diaFinal;
+      c.nome = nome; c.valor = valor; c.categoria = categoria; c.status = status; c.obs = obs;
+      toast('Conta alterada para avulsa. Ocorrências futuras foram removidas.');
+    } else if(!c.recorrente && recorrente){
+      c.recorrente = true;
+      delete c.fimEm;
+      c.data = dataInicio;
+      c.dia = diaFinal;
+      c.nome = nome; c.valor = valor; c.categoria = categoria; c.obs = obs;
+      ensureContaMensal(c)[month] = status;
+      ensureContaEdicoes(c);
+      ensureContaExclusoes(c);
+      toast('Conta alterada para recorrente.');
+    } else if(c.recorrente){
       const scope = document.getElementById('contaEscopo').value;
       if(scope==='sempre'){
         c.nome=nome; c.valor=valor; c.dia=diaFinal; c.categoria=categoria; c.obs=obs;
@@ -1466,7 +1522,6 @@ function saveConta(){
       toast('Conta atualizada.');
     }
   }else{
-    // Nova conta nasce no mês escolhido. Se recorrente, repete dali para frente.
     const novo={id:uid(),nome,valor,dia:diaFinal,data:dataInicio,categoria,status,recorrente,obs};
     if(recorrente){
       novo.statusPorMes={}; novo.edicoesPorMes={}; novo.excluidaPorMes={};
@@ -1477,7 +1532,6 @@ function saveConta(){
   }
   saveState(); closeModal('modalConta'); renderAll();
 }
-/* Remove a ocorrência de apenas um mês específico, sem afetar os demais meses */
 function removeContaMonth(id, month){
   const c = state.contas.find(x=>x.id===id);
   if(!c) return;
@@ -1485,7 +1539,6 @@ function removeContaMonth(id, month){
   ensureContaExclusoes(c)[month]=true;
   saveState(); renderAll(); toast('Removida apenas em '+monthLabelForKey(month)+'.');
 }
-/* Exclui a conta inteira, com todo o seu histórico e futuras ocorrências */
 function deleteConta(id){
   const c=state.contas.find(x=>x.id===id);
   if(!c)return;
@@ -1506,7 +1559,6 @@ function toggleContaStatus(id){
   saveState(); renderAll();
 }
 
-/* ---- Gasto rápido do dia (lançamento avulso simplificado) ---- */
 function openGastoModal(){
   document.getElementById('gastoValor').value = '';
   document.getElementById('gastoDesc').value = '';
@@ -1541,18 +1593,58 @@ function renderContas(){
   const holder = document.getElementById('contasHolder');
   const month=getControlMonth();
   const input=document.getElementById('contasMonth'); if(input && input.value!==month) input.value=month;
+  
   if(state.contas.length===0){
     holder.innerHTML = `<div class="empty"><div class="glyph">▤</div><h3>Nenhuma conta cadastrada</h3>
       <p>Adicione suas contas fixas (aluguel, internet, cartão...) para acompanhar o que vence todo mês.</p>
       <button class="btn btn-primary" onclick="openContaModal()">+ Nova conta</button></div>`;
     return;
   }
+  
   const contasDoMes=monthContas(month);
+
+  // Aplicação dos Filtros de Categoria e Tipo
+  const filteredContas = contasDoMes.filter(c => {
+    const eff = getContaEffective(c, month);
+    if(contaFilterCategory !== 'todas' && eff.categoria !== contaFilterCategory) return false;
+    if(contaFilterTipo === 'recorrente' && !c.recorrente) return false;
+    if(contaFilterTipo === 'avulso' && c.recorrente) return false;
+    return true;
+  });
+
+  const categories = ['Moradia', 'Contas fixas', 'Cartão de crédito', 'Transporte', 'Alimentação', 'Saúde', 'Educação', 'Lazer', 'Assinaturas', 'Outros'];
+
+  const filterBar = `
+    <div class="table-filters">
+      <label>
+        Categoria:
+        <select onchange="contaFilterCategory=this.value; renderContas();">
+          <option value="todas" ${contaFilterCategory==='todas'?'selected':''}>Todas as categorias</option>
+          ${categories.map(cat => `<option value="${cat}" ${contaFilterCategory===cat?'selected':''}>${cat}</option>`).join('')}
+        </select>
+      </label>
+      <label>
+        Tipo:
+        <select onchange="contaFilterTipo=this.value; renderContas();">
+          <option value="todos" ${contaFilterTipo==='todos'?'selected':''}>Todos os tipos</option>
+          <option value="recorrente" ${contaFilterTipo==='recorrente'?'selected':''}>Apenas recorrentes</option>
+          <option value="avulso" ${contaFilterTipo==='avulso'?'selected':''}>Apenas avulsas</option>
+        </select>
+      </label>
+    </div>
+  `;
+
   if(!contasDoMes.length){
-    holder.innerHTML = `<div class="empty"><div class="glyph">▤</div><h3>Nenhuma conta neste mês</h3><p>Não há contas avulsas ou recorrentes cadastradas para este período.</p><button class="btn btn-primary" onclick="openContaModal()">+ Nova conta</button></div>`;
+    holder.innerHTML = filterBar + `<div class="empty"><div class="glyph">▤</div><h3>Nenhuma conta neste mês</h3><p>Não há contas avulsas ou recorrentes cadastradas para este período.</p><button class="btn btn-primary" onclick="openContaModal()">+ Nova conta</button></div>`;
     return;
   }
-  const ordered = [...contasDoMes].sort((a,b)=>(getContaEffective(a,month).dia||a.dia)-(getContaEffective(b,month).dia||b.dia));
+
+  if(!filteredContas.length){
+    holder.innerHTML = filterBar + `<div class="empty"><div class="glyph">🔍</div><h3>Nenhuma conta encontrada com esses filtros</h3><p>Tente alterar os filtros selecionados acima.</p></div>`;
+    return;
+  }
+
+  const ordered = [...filteredContas].sort((a,b)=>(getContaEffective(a,month).dia||a.dia)-(getContaEffective(b,month).dia||b.dia));
   let totalPendente=0, totalPago=0;
   const rows = ordered.map(c=>{
     const eff=getContaEffective(c,month);
@@ -1576,12 +1668,13 @@ function renderContas(){
   }).join('');
   holder.innerHTML = `
     <div class="month-summary" style="margin-bottom:12px;"><div><div class="ms-title">Contas de ${new Date(Number(month.slice(0,4)),Number(month.slice(5,7))-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</div><div style="font-size:11px;color:var(--paper-text-dim);margin-top:3px">O status de cada conta é independente em cada mês.</div></div></div>
+    ${filterBar}
     <table class="ledger">
       <thead><tr><th>Conta</th><th>Categoria</th><th class="num">Valor</th><th class="num">Venc.</th><th>Tipo</th><th>Status</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot>
-        <tr><td colspan="2">Pendente neste mês</td><td class="num c-red" colspan="5">${fmtBRL(totalPendente)}</td></tr>
-        <tr><td colspan="2">Pago neste mês</td><td class="num c-green" colspan="5">${fmtBRL(totalPago)}</td></tr>
+        <tr><td colspan="2">Pendente exibido</td><td class="num c-red" colspan="5">${fmtBRL(totalPendente)}</td></tr>
+        <tr><td colspan="2">Pago exibido</td><td class="num c-green" colspan="5">${fmtBRL(totalPago)}</td></tr>
       </tfoot>
     </table>`;
 }
@@ -1753,7 +1846,6 @@ function simularEste(id){
   runSimulation();
 }
 
-/* ---- Aportes / retiradas (histórico de movimentações) ---- */
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function ensureHistorico(inv){ if(!Array.isArray(inv.historico)) inv.historico = []; return inv.historico; }
 
@@ -1846,311 +1938,444 @@ function renderInvestimentos(){
       <div class="rate-row"><span>Rende ~/mês (estimado)</span><b class="c-green">${fmtBRL(rendMes)}</b></div>
       <div class="card-actions">
         <button class="btn btn-sm btn-gold" onclick="openAporteModal('${inv.id}')">+ Aporte / retirada</button>
-        <button class="btn btn-sm btn-primary" onclick="simularEste('${inv.id}')">Simular</button>
+        <button class="btn btn-sm btn-ghost" onclick="simularEste('${inv.id}')">Simular</button>
       </div>
       <button class="history-toggle" onclick="toggleHistory('${inv.id}')">
-        <span>Histórico de movimentações (${historico.length})</span><span>${isOpen?'▲':'▼'}</span>
+        <span>Histórico (${historico.length})</span>
+        <span>${isOpen ? '▲' : '▼'}</span>
       </button>
       <ul class="invest-history ${isOpen?'open':''}">
-        ${histRows || '<li class="invest-history-empty">Nenhuma movimentação registrada ainda.</li>'}
+        ${historico.length ? histRows : '<div class="invest-history-empty">Nenhuma movimentação lançada ainda.</div>'}
       </ul>
     </div>`;
   }).join('');
 }
 
 /* ======================================================================
-   PAINEL / DASHBOARD
+   SIMULADOR DE INVESTIMENTOS
    ====================================================================== */
-function renderPainel(){
-  const month=getDashboardMonth();
-  const [yy,mm]=month.split('-').map(Number);
-  const monthName=new Date(yy,mm-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
-  document.getElementById('hojeLabel').textContent = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
-  const input=document.getElementById('dashboardMonth'); if(input && input.value!==month) input.value=month;
-  const contasInput=document.getElementById('contasMonth'); if(contasInput && contasInput.value!==month) contasInput.value=month;
-  const receitas=monthReceitas(month);
-  const contas=monthContas(month);
-  const gastos=contas.filter(c=>getContaStatus(c,month)==='pago');
-  const totalReceitas=receitas.reduce((s,r)=>s+r.valor,0);
-  const totalGastos=gastos.reduce((s,c)=>s+c.valor,0);
-  const aportes=monthInvestimentos(month);
-  const totalAportes=aportes.reduce((s,h)=>s+h.valor,0);
-  const saldoAposGastos=totalReceitas-totalGastos;
-  const saldoLivre=saldoAposGastos-totalAportes;
-  const totalInvestido=state.investimentos.reduce((s,i)=>s+i.saldo,0);
-  const totalContasPend=contas.filter(c=>getContaStatus(c,month)!=='pago').reduce((s,c)=>s+c.valor,0);
-  const totalDividas=state.dividas.reduce((s,d)=>s+(d.parcelasTotal-d.parcelasPagas)*d.valorParcela,0);
-  const patrimonio=totalInvestido-totalDividas;
-  document.getElementById('statReceitas').textContent=fmtBRL(totalReceitas);
-  document.getElementById('statReceitasFoot').textContent=`${receitas.length} lançamento(s) em ${monthName}`;
-  document.getElementById('statGastos').textContent=fmtBRL(totalGastos);
-  document.getElementById('statGastosFoot').textContent=`${gastos.length} gasto(s) pagos`;
-  document.getElementById('statInvestidoMes').textContent=fmtBRL(totalAportes);
-  document.getElementById('statInvestidoMesFoot').textContent=`${aportes.length} aporte(s) registrado(s)`;
-  document.getElementById('statSaldoMes').textContent=fmtBRL(saldoAposGastos);
-  document.getElementById('statSaldoLivre').textContent=fmtBRL(saldoLivre);
-  document.getElementById('statSaldoLivre').className='value '+(saldoLivre>=0?'c-green':'c-red');
-  document.getElementById('monthSummary').innerHTML=`<div><div class="ms-title">Resumo de ${escapeHtml(monthName)}</div><div style="font-size:11px;color:var(--paper-text-dim);margin-top:3px">O saldo livre considera somente receitas recebidas, gastos pagos e aportes registrados no mês.</div></div><div class="ms-items"><div class="ms-item">A receber/pendente<b>${fmtBRL(totalContasPend)}</b></div><div class="ms-item">Investimentos acumulados<b>${fmtBRL(totalInvestido)}</b></div><div class="ms-item">Dívidas abertas<b>${fmtBRL(totalDividas)}</b></div><div class="ms-item">Patrimônio líquido<b>${fmtBRL(patrimonio)}</b></div></div>`;
-  document.getElementById('miniPatrimonio').textContent=fmtBRL(patrimonio);
-  document.getElementById('miniPendencias').textContent=fmtBRL(totalContasPend);
-  const donutHolder=document.getElementById('donutHolder');
-  const parts=[{label:'Receitas',value:totalReceitas,color:'var(--green)'},{label:'Gastos',value:totalGastos,color:'var(--red)'},{label:'Investido no mês',value:totalAportes,color:'var(--blue)'},{label:'Contas pendentes',value:totalContasPend,color:'var(--gold)'}];
-  const total=parts.reduce((s,p)=>s+p.value,0);
-  if(total<=0) donutHolder.innerHTML='<div class="empty" style="padding:20px 0;"><p style="margin:0;">Cadastre receitas e gastos para acompanhar o mês.</p></div>';
-  else{let acc=0;const R=58,C=2*Math.PI*R;const circles=parts.filter(p=>p.value>0).map(p=>{const dash=p.value/total*C;const offset=C-acc;acc+=dash;return `<circle r="${R}" cx="80" cy="80" fill="none" stroke="${p.color}" stroke-width="20" stroke-dasharray="${dash} ${C-dash}" stroke-dashoffset="${offset}" transform="rotate(-90 80 80)" stroke-linecap="butt"/>`;}).join('');donutHolder.innerHTML=`<svg width="160" height="160" viewBox="0 0 160 160">${circles}<circle r="38" cx="80" cy="80" fill="var(--paper)"/></svg><div class="donut-legend">${parts.map(p=>`<div class="li"><span class="lft"><span class="sw" style="background:${p.color}"></span>${p.label}</span><b>${fmtBRL(p.value)}</b></div>`).join('')}</div>`;}
-  const upcomingHolder=document.getElementById('upcomingList'); const todayDay=new Date().getDate();
-  const items=[...contas.filter(c=>getContaStatus(c,month)!=='pago').map(c=>({nome:c.nome,sub:c.categoria,dia:c.dia,valor:c.valor})),...state.dividas.filter(d=>d.parcelasPagas<d.parcelasTotal).map(d=>({nome:d.nome,sub:d.tipo,dia:d.dia,valor:d.valorParcela}))].sort((a,b)=>{const da=a.dia>=todayDay?a.dia:a.dia+31,db=b.dia>=todayDay?b.dia:b.dia+31;return da-db;}).slice(0,7);
-  upcomingHolder.innerHTML=items.length?items.map(it=>`<li><span class="day">${it.dia}</span><span class="info"><span class="nm">${escapeHtml(it.nome)}</span><span class="ct">${escapeHtml(it.sub)}</span></span><span class="amt">${fmtBRL(it.valor)}</span></li>`).join(''):'<div class="empty" style="padding:20px 0;"><p style="margin:0;">Nenhum vencimento pendente por aqui. 🎉</p></div>';
+let scenarios = [
+  {id:'s1', nome:'Caixinha 100% CDI', taxa:10.65, color:'#8b5cf6', on:true},
+  {id:'s2', nome:'Poupança (6,17% a.a.)', taxa:6.17, color:'#2f9e6e', on:true},
+  {id:'s3', nome:'CDB 110% CDI', taxa:11.71, color:'#4f7cd6', on:true},
+];
+const scenarioColors = ['#8b5cf6','#2f9e6e','#4f7cd6','#c9a24b','#c0483d','#e07a5f','#3d5a80'];
+
+function renderScenarios(){
+  const list = document.getElementById('scenarioList');
+  list.innerHTML = scenarios.map((s,i)=>`
+    <div class="scenario-row ${s.on?'':'off'}">
+      <input type="checkbox" ${s.on?'checked':''} onchange="toggleScenario('${s.id}')">
+      <div class="scenario-color" style="background:${s.color}"></div>
+      <input type="text" value="${escapeHtml(s.nome)}" onchange="updateScenario('${s.id}','nome',this.value)">
+      <input type="number" value="${s.taxa}" step="0.01" onchange="updateScenario('${s.id}','taxa',parseFloat(this.value)||0)">
+      <button class="rm" onclick="removeScenario('${s.id}')" title="Remover">✕</button>
+    </div>
+  `).join('');
 }
-
-function renderAll(){
-  renderPainel();
-  renderReceitas();
-  renderContas();
-  renderDividas();
-  renderInvestimentos();
-}
-
-/* ======================================================================
-   SIMULADOR
-   ====================================================================== */
-const defaultScenarios = () => ([
-  {id:uid(), nome:'Caixinha / conta remunerada (100% CDI)', taxa:10.65, color:'#8b5cf6', on:true},
-  {id:uid(), nome:'Poupança', taxa:6.17, color:'#2f9e6e', on:true},
-  {id:uid(), nome:'CDB 110% CDI', taxa:11.7, color:'#4f7cd6', on:true},
-]);
-let scenarios = defaultScenarios();
-let lastSimResults = [];
-let extratoFull = false;
-let extratoScenarioIdx = 0;
-
-function resetScenarios(){ scenarios = defaultScenarios(); renderScenarios(); runSimulation(); }
 function addScenario(){
-  const palette = ['#c9a24b','#c0483d','#22a6b3','#e17055','#6c5ce7','#00b894'];
-  scenarios.push({id:uid(), nome:'Novo cenário', taxa:8, color:palette[scenarios.length%palette.length], on:true});
+  const idx = scenarios.length;
+  scenarios.push({
+    id: uid(),
+    nome: 'Novo cenário ' + (idx+1),
+    taxa: 10,
+    color: scenarioColors[idx % scenarioColors.length],
+    on: true,
+  });
   renderScenarios();
+  runSimulation();
 }
 function removeScenario(id){
+  if(scenarios.length<=1){ toast('Mantenha ao menos um cenário.', 'err'); return; }
   scenarios = scenarios.filter(s=>s.id!==id);
-  renderScenarios(); runSimulation();
+  renderScenarios();
+  runSimulation();
 }
-function renderScenarios(){
-  const holder = document.getElementById('scenarioList');
-  holder.innerHTML = scenarios.map(s=>`
-    <div class="scenario-row ${s.on?'':'off'}">
-      <input type="checkbox" ${s.on?'checked':''} onchange="scenarios.find(x=>x.id==='${s.id}').on=this.checked; renderScenarios(); runSimulation();">
-      <input type="text" value="${escapeHtml(s.nome)}" onchange="scenarios.find(x=>x.id==='${s.id}').nome=this.value; renderScenarios();">
-      <input type="number" step="0.01" value="${s.taxa}" title="% ao ano" onchange="scenarios.find(x=>x.id==='${s.id}').taxa=parseFloat(this.value)||0; runSimulation();">
-      <button class="rm" title="Remover" onclick="removeScenario('${s.id}')">✕</button>
-    </div>`).join('');
+function toggleScenario(id){
+  const s = scenarios.find(x=>x.id===id);
+  if(s){ s.on = !s.on; renderScenarios(); runSimulation(); }
+}
+function updateScenario(id, key, val){
+  const s = scenarios.find(x=>x.id===id);
+  if(s){ s[key] = val; runSimulation(); }
+}
+function resetScenarios(){
+  scenarios = [
+    {id:'s1', nome:'Caixinha 100% CDI', taxa:10.65, color:'#8b5cf6', on:true},
+    {id:'s2', nome:'Poupança (6,17% a.a.)', taxa:6.17, color:'#2f9e6e', on:true},
+    {id:'s3', nome:'CDB 110% CDI', taxa:11.71, color:'#4f7cd6', on:true},
+  ];
+  renderScenarios();
+  runSimulation();
 }
 
-function simulateCompound({inicial, aporte, taxaAnual, meses, reajusteAnual}){
-  const taxaMensal = Math.pow(1+taxaAnual/100, 1/12)-1;
-  let saldo = inicial, aportado = inicial, aporteAtual = aporte;
-  const serie = [{mes:0, saldo, aportado, rendimento:0}];
-  for(let m=1; m<=meses; m++){
-    if(m>1 && (m-1)%12===0 && reajusteAnual>0){ aporteAtual *= (1+reajusteAnual/100); }
-    const rendMes = saldo*taxaMensal;
-    saldo += rendMes + aporteAtual;
-    aportado += aporteAtual;
-    serie.push({mes:m, saldo, aportado, rendimento: saldo-aportado});
-  }
-  return serie;
-}
+let lastSimResult = null;
+let activeExtratoScenarioId = null;
+let extratoFullView = false;
 
 function runSimulation(){
-  const inicial = parseFloat(document.getElementById('simInicial').value)||0;
-  const aporte = parseFloat(document.getElementById('simAporte').value)||0;
-  const meses = Math.max(1, Math.min(480, parseInt(document.getElementById('simPrazo').value)||1));
-  const reajuste = parseFloat(document.getElementById('simReajuste').value)||0;
-  document.getElementById('simPrazoAnos').textContent = `≈ ${(meses/12).toFixed(1)} anos`;
+  const vInicial = parseFloat(document.getElementById('simInicial').value)||0;
+  const vAporte = parseFloat(document.getElementById('simAporte').value)||0;
+  const prazo = parseInt(document.getElementById('simPrazo').value)||1;
+  const reajuste = (parseFloat(document.getElementById('simReajuste').value)||0)/100;
 
-  const activeScenarios = scenarios.filter(s=>s.on);
-  lastSimResults = activeScenarios.map(s=>({
-    scenario: s,
-    serie: simulateCompound({inicial, aporte, taxaAnual:s.taxa, meses, reajusteAnual:reajuste})
-  }));
+  const anosText = (prazo/12).toFixed(1).replace('.0','') + ' ano(s)';
+  document.getElementById('simPrazoAnos').textContent = anosText;
 
-  renderChart(meses);
-  renderResultGrid();
-  extratoScenarioIdx = 0;
-  renderExtrato();
-}
-
-function renderChart(meses){
-  const holder = document.getElementById('chartHolder');
-  const legend = document.getElementById('chartLegend');
-  if(lastSimResults.length===0){
-    holder.innerHTML = `<div class="empty" style="padding:30px 0;"><p style="margin:0;">Ative ao menos um cenário para ver o gráfico.</p></div>`;
-    legend.innerHTML='';
+  const active = scenarios.filter(s=>s.on);
+  if(!active.length){
+    document.getElementById('chartHolder').innerHTML = '<div style="padding:40px;text-align:center;color:var(--paper-text-dim)">Selecione ao menos um cenário para ver a simulação.</div>';
     return;
   }
-  legend.innerHTML = lastSimResults.map(r=>{
-    const final = r.serie[r.serie.length-1].saldo;
-    return `<span class="item"><span class="sw" style="background:${r.scenario.color}"></span>${escapeHtml(r.scenario.nome)} <span class="leg-value">${fmtBRL(final)}</span></span>`;
-  }).join('');
 
-  const W = 900, H = 320, padL = 64, padR = 20, padT = 18, padB = 34;
-  const maxY = Math.max(...lastSimResults.map(r=>Math.max(...r.serie.map(p=>p.saldo)))) * 1.06;
-  const x = m => padL + (m/meses)*(W-padL-padR);
-  const y = v => H-padB - (v/maxY)*(H-padT-padB);
+  const results = active.map(s=>{
+    const iMensal = Math.pow(1 + s.taxa/100, 1/12) - 1;
+    let saldo = vInicial;
+    let totalInvestido = vInicial;
+    let aporteAtual = vAporte;
+    const history = [{mes:0, investido:vInicial, juros:0, saldo:vInicial, aporte:0}];
 
-  // gridlines (ledger paper feel)
-  let gridLines = '';
-  const steps = 5;
-  for(let i=0;i<=steps;i++){
-    const val = maxY*i/steps;
-    const yy = y(val);
-    gridLines += `<line x1="${padL}" y1="${yy}" x2="${W-padR}" y2="${yy}" stroke="var(--paper-line-2)" stroke-width="1" stroke-dasharray="2 4"/>`;
-    gridLines += `<text x="${padL-8}" y="${yy+4}" text-anchor="end" font-size="10.5" font-family="IBM Plex Mono, monospace" fill="var(--paper-text-dim)">${fmtCompact(val)}</text>`;
-  }
-  // x labels
-  let xLabels = '';
-  const xTicks = Math.min(6, meses);
-  for(let i=0;i<=xTicks;i++){
-    const m = Math.round(meses*i/xTicks);
-    xLabels += `<text x="${x(m)}" y="${H-12}" text-anchor="middle" font-size="10.5" font-family="IBM Plex Mono, monospace" fill="var(--paper-text-dim)">${m}m</text>`;
-  }
+    for(let m=1; m<=prazo; m++){
+      if(m > 1 && (m-1)%12 === 0 && reajuste > 0){
+        aporteAtual *= (1 + reajuste);
+      }
+      const rendimento = saldo * iMensal;
+      saldo += rendimento + aporteAtual;
+      totalInvestido += aporteAtual;
+      history.push({
+        mes: m,
+        investido: totalInvestido,
+        rendimentoMes: rendimento,
+        jurosTotal: saldo - totalInvestido,
+        saldo: saldo,
+        aporte: aporteAtual,
+      });
+    }
 
-  const paths = lastSimResults.map(r=>{
-    const d = r.serie.map((p,i)=> (i===0?'M':'L') + x(p.mes).toFixed(1) + ',' + y(p.saldo).toFixed(1)).join(' ');
-    return `<path d="${d}" fill="none" stroke="${r.scenario.color}" stroke-width="2.5" stroke-linecap="round" class="chart-line" />`;
-  }).join('');
-
-  // aportado line (principal only) using first scenario for reference, dashed
-  const ref = lastSimResults[0];
-  const dAportado = ref.serie.map((p,i)=> (i===0?'M':'L') + x(p.mes).toFixed(1) + ',' + y(p.aportado).toFixed(1)).join(' ');
-
-  holder.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%; height:auto; display:block;">
-    ${gridLines}
-    <path d="${dAportado}" fill="none" stroke="var(--paper-text-dim)" stroke-width="1.5" stroke-dasharray="4 4"/>
-    ${paths}
-    ${xLabels}
-  </svg>
-  <div style="font-size:11px; color:var(--paper-text-dim); margin-top:4px;">▬ ▬ linha pontilhada = total aportado (sem rendimento), para referência</div>`;
-
-  // animate draw-in (guarded: skip quietly if the browser lacks SVG path length support)
-  requestAnimationFrame(()=>{
-    document.querySelectorAll('.chart-line').forEach(p=>{
-      try{
-        if(typeof p.getTotalLength !== 'function') return;
-        const len = p.getTotalLength();
-        p.style.strokeDasharray = len;
-        p.style.strokeDashoffset = len;
-        p.getBoundingClientRect();
-        p.style.transition = 'stroke-dashoffset 1s ease';
-        p.style.strokeDashoffset = '0';
-      }catch(e){ /* animation is cosmetic only, safe to skip */ }
-    });
+    return {
+      id: s.id,
+      nome: s.nome,
+      color: s.color,
+      taxa: s.taxa,
+      saldoFinal: saldo,
+      totalInvestido,
+      jurosTotal: saldo - totalInvestido,
+      history,
+    };
   });
-}
-function fmtCompact(v){
-  if(v>=1000000) return 'R$ '+(v/1000000).toFixed(1)+'M';
-  if(v>=1000) return 'R$ '+(v/1000).toFixed(0)+'k';
-  return 'R$ '+v.toFixed(0);
+
+  lastSimResult = { vInicial, vAporte, prazo, reajuste, results };
+
+  if(!activeExtratoScenarioId || !results.some(r=>r.id===activeExtratoScenarioId)){
+    activeExtratoScenarioId = results[0].id;
+  }
+
+  renderChart(results, prazo);
+  renderResultGrid(results);
+  renderExtratoTable();
 }
 
-function renderResultGrid(){
-  const grid = document.getElementById('resultGrid');
-  if(lastSimResults.length===0){ grid.innerHTML=''; return; }
-  grid.innerHTML = lastSimResults.map(r=>{
-    const last = r.serie[r.serie.length-1];
-    return `<div class="result-card">
-      <div class="label" style="color:${r.scenario.color}">${escapeHtml(r.scenario.nome)}</div>
-      <div class="val">${fmtBRL(last.saldo)}</div>
-      <div style="font-size:11.5px; color:var(--paper-text-dim); margin-top:6px;">
-        Aportado: <b style="font-family:var(--font-mono); color:var(--paper-text)">${fmtBRL(last.aportado)}</b><br>
-        Rendimento: <b style="font-family:var(--font-mono); color:var(--green-dark)">${fmtBRL(last.rendimento)}</b>
-      </div>
-    </div>`;
+function renderChart(results, prazo){
+  const holder = document.getElementById('chartHolder');
+  const legend = document.getElementById('chartLegend');
+
+  legend.innerHTML = results.map(r=>`
+    <div class="item" style="cursor:pointer;" onclick="activeExtratoScenarioId='${r.id}'; renderExtratoTable();">
+      <div class="sw" style="background:${r.color}"></div>
+      <span>${escapeHtml(r.nome)}</span>
+      <b class="leg-value">${fmtBRL(r.saldoFinal)}</b>
+    </div>
+  `).join('');
+
+  const w = 800, h = 260, padL = 60, padR = 20, padT = 20, padB = 30;
+  const maxVal = Math.max(...results.flatMap(r=>r.history.map(h=>h.saldo))) * 1.05 || 1;
+
+  const getX = m => padL + (m / prazo) * (w - padL - padR);
+  const getY = v => h - padB - (v / maxVal) * (h - padT - padB);
+
+  let gridYLines = '';
+  for(let i=0; i<=4; i++){
+    const yVal = (maxVal/4) * i;
+    const y = getY(yVal);
+    gridYLines += `<line x1="${padL}" y1="${y}" x2="${w-padR}" y2="${y}" stroke="var(--paper-line)" stroke-dasharray="3,3"/>`;
+    gridYLines += `<text x="${padL-6}" y="${y+4}" font-size="10" fill="var(--paper-text-dim)" text-anchor="end" font-family="var(--font-mono)">${Math.round(yVal/1000)}k</text>`;
+  }
+
+  const stepX = Math.max(1, Math.floor(prazo/6));
+  let gridXLines = '';
+  for(let m=0; m<=prazo; m+=stepX){
+    const x = getX(m);
+    gridXLines += `<text x="${x}" y="${h-8}" font-size="10" fill="var(--paper-text-dim)" text-anchor="middle" font-family="var(--font-mono)">mês ${m}</text>`;
+  }
+
+  const paths = results.map(r=>{
+    const d = r.history.map((pt,i)=>(i===0?'M':'L') + ` ${getX(pt.mes).toFixed(1)},${getY(pt.saldo).toFixed(1)}`).join(' ');
+    return `<path d="${d}" fill="none" stroke="${r.color}" stroke-width="3" stroke-linecap="round"/>`;
   }).join('');
+
+  holder.innerHTML = `<svg viewBox="0 0 ${w} ${h}" style="width:100%; height:auto; display:block;">
+    ${gridYLines}
+    ${gridXLines}
+    ${paths}
+  </svg>`;
 }
 
-function renderExtrato(){
-  const table = document.getElementById('extratoTable');
-  const tag = document.getElementById('extratoScenarioTag');
-  const btn = document.getElementById('btnVerTudo');
-  if(lastSimResults.length===0){ table.innerHTML=''; tag.textContent=''; btn.style.display='none'; return; }
-  btn.style.display='inline-flex';
-  if(extratoScenarioIdx>=lastSimResults.length) extratoScenarioIdx=0;
-  const r = lastSimResults[extratoScenarioIdx];
-  tag.innerHTML = lastSimResults.map((rr,i)=>`<button class="btn btn-sm ${i===extratoScenarioIdx?'btn-gold':'btn-ghost'}" style="margin-left:6px;" onclick="extratoScenarioIdx=${i}; renderExtrato();">${escapeHtml(rr.scenario.nome)}</button>`).join('');
-  const rowsToShow = extratoFull ? r.serie : r.serie.slice(0, 13);
-  const body = rowsToShow.map(p=>`<tr>
-    <td>${p.mes===0?'Início':'Mês '+p.mes}</td>
-    <td class="num">${fmtBRL(p.aportado)}</td>
-    <td class="num c-green">${fmtBRL(p.rendimento)}</td>
-    <td class="num" style="font-weight:600;">${fmtBRL(p.saldo)}</td>
-  </tr>`).join('');
-  table.innerHTML = `<thead><tr><th>Período</th><th class="num">Total aportado</th><th class="num">Rendimento acumulado</th><th class="num">Saldo</th></tr></thead><tbody>${body}</tbody>`;
-  document.getElementById('btnVerTudo').textContent = extratoFull ? 'Mostrar menos' : 'Ver todos os meses';
+function renderResultGrid(results){
+  const grid = document.getElementById('resultGrid');
+  grid.innerHTML = results.map(r=>`
+    <div class="result-card" style="border-top:3px solid ${r.color}">
+      <div class="label" style="color:${r.color}">${escapeHtml(r.nome)}</div>
+      <div class="val">${fmtBRL(r.saldoFinal)}</div>
+      <div style="font-size:12px; color:var(--paper-text-dim); margin-top:8px;">
+        Investido: <b>${fmtBRL(r.totalInvestido)}</b><br>
+        Rendimento líquido: <b class="c-green">+${fmtBRL(r.jurosTotal)}</b> (${((r.jurosTotal/r.totalInvestido)*100).toFixed(1)}%)
+      </div>
+    </div>
+  `).join('');
 }
-function toggleExtratoFull(){ extratoFull = !extratoFull; renderExtrato(); }
 
-document.getElementById('simPrazo').addEventListener('input', ()=>{
-  document.getElementById('simPrazoAnos').textContent = `≈ ${((parseInt(document.getElementById('simPrazo').value)||1)/12).toFixed(1)} anos`;
-});
-['simInicial','simAporte','simPrazo','simReajuste'].forEach(id=>{
-  document.getElementById(id).addEventListener('change', runSimulation);
-});
+function renderExtratoTable(){
+  if(!lastSimResult) return;
+  const currentRes = lastSimResult.results.find(r=>r.id===activeExtratoScenarioId) || lastSimResult.results[0];
+  if(!currentRes) return;
+
+  document.getElementById('extratoScenarioTag').textContent = currentRes.nome;
+
+  const rows = extratoFullView ? currentRes.history : currentRes.history.filter((_,i)=> i<=6 || i===currentRes.history.length-1);
+  const showEllipsis = !extratoFullView && currentRes.history.length > 8;
+
+  let html = `<thead><tr><th>Mês</th><th class="num">Aporte</th><th class="num">Total investido</th><th class="num">Rendimento do mês</th><th class="num">Saldo acumulado</th></tr></thead><tbody>`;
+
+  rows.forEach((h,idx)=>{
+    if(showEllipsis && idx === 7){
+      html += `<tr><td colspan="5" style="text-align:center; color:var(--paper-text-dim); padding:8px;">... (${currentRes.history.length - 8} meses ocilados) ...</td></tr>`;
+    }
+    html += `<tr>
+      <td>${h.mes===0?'Início':'Mês '+h.mes}</td>
+      <td class="num">${h.mes===0?'—':fmtBRL(h.aporte)}</td>
+      <td class="num">${fmtBRL(h.investido)}</td>
+      <td class="num c-green">${h.mes===0?'—':'+'+fmtBRL(h.rendimentoMes)}</td>
+      <td class="num" style="font-weight:600">${fmtBRL(h.saldo)}</td>
+    </tr>`;
+  });
+
+  html += `</tbody>`;
+  document.getElementById('extratoTable').innerHTML = html;
+  document.getElementById('btnVerTudo').textContent = extratoFullView ? 'Ver menos' : 'Ver todos os meses ('+currentRes.history.length+')';
+}
+
+function toggleExtratoFull(){
+  extratoFullView = !extratoFullView;
+  renderExtratoTable();
+}
 
 /* ======================================================================
-   CONFIGURAÇÕES / BACKUP
+   CONFIG
    ====================================================================== */
 function exportBackup(){
-  const blob = new Blob([JSON.stringify(state, null, 2)], {type:'application/json'});
+  const json = JSON.stringify(state, null, 2);
+  const blob = new Blob([json], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = `livro-caixa-backup-${currentMonthKey()}.json`;
-  document.body.appendChild(a); a.click(); a.remove();
+  a.href = url;
+  a.download = `livro-caixa-backup-${todayISO()}.json`;
+  a.click();
   URL.revokeObjectURL(url);
-  toast('Backup baixado.');
+  toast('Backup exportado com sucesso.');
 }
-function importBackup(evt){
-  const file = evt.target.files[0];
+function importBackup(e){
+  const file = e.target.files[0];
   if(!file) return;
   const reader = new FileReader();
-  reader.onload = e=>{
+  reader.onload = ev => {
     try{
-      const data = JSON.parse(e.target.result);
-      if(!data || !Array.isArray(data.contas) || !Array.isArray(data.dividas) || !Array.isArray(data.investimentos)){
-        throw new Error('formato inválido');
+      const data = JSON.parse(ev.target.result);
+      if(data && typeof data==='object'){
+        state = data;
+        saveState();
+        renderAll();
+        toast('Backup importado com sucesso!');
       }
-      if(!confirm('Isso vai substituir todos os dados atuais por este backup. Continuar?')) return;
-      state = data;
-      saveState(); renderAll();
-      toast('Backup importado com sucesso.');
     }catch(err){
-      toast('Não foi possível ler esse arquivo. Verifique se é um backup válido.', 'err');
+      toast('Arquivo inválido de backup.', 'err');
     }
   };
   reader.readAsText(file);
-  evt.target.value = '';
 }
 function clearAll(){
-  if(!confirm('Isso vai apagar TODOS os seus dados permanentemente. Deseja continuar?')) return;
-  if(!confirm('Tem certeza mesmo? Essa ação não pode ser desfeita.')) return;
-  state = {contas:[], dividas:[], investimentos:[], receitas:[]};
-  saveState(); renderAll();
+  if(!confirm('Tem certeza ABSOLUTA que deseja apagar todos os dados? Esta ação não pode ser desfeita.')) return;
+  state = { contas:[], dividas:[], investimentos:[], receitas:[] };
+  saveState();
+  renderAll();
   toast('Todos os dados foram apagados.');
 }
 
 /* ======================================================================
-   INIT
+   RENDERG GERAL / PAINEL
    ====================================================================== */
-try{
-  renderScenarios();
-  renderAll();
-  runSimulation();
-}catch(e){
-  console.error('Erro ao iniciar o aplicativo', e);
-  document.getElementById('bootErrorMsg').textContent = (e && e.stack) ? e.stack : String(e);
-  document.getElementById('bootError').classList.add('show');
+function renderDashboard(){
+  const month = getDashboardMonth();
+  const dInput = document.getElementById('dashboardMonth');
+  if(dInput && dInput.value!==month) dInput.value = month;
+
+  const dateLbl = document.getElementById('hojeLabel');
+  if(dateLbl) dateLbl.textContent = new Date().toLocaleDateString('pt-BR', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+
+  const recs = monthReceitas(month);
+  const totalRec = recs.reduce((s,r)=> s + getReceitaEffective(r,month).valor, 0);
+
+  const contas = monthContas(month);
+  const contasPagas = contas.filter(c => getContaStatus(c,month)==='pago');
+  const totalGastosPago = contasPagas.reduce((s,c)=> s + getContaEffective(c,month).valor, 0);
+
+  const invsMes = monthInvestimentos(month);
+  const totalInvestidoMes = invsMes.reduce((s,h)=> s + h.valor, 0);
+
+  const saldoMes = totalRec - totalGastosPago;
+  const saldoLivre = saldoMes - totalInvestidoMes;
+
+  document.getElementById('statReceitas').textContent = fmtBRL(totalRec);
+  document.getElementById('statReceitasFoot').textContent = recs.length + ' lançamento(s)';
+
+  document.getElementById('statGastos').textContent = fmtBRL(totalGastosPago);
+  document.getElementById('statGastosFoot').textContent = contasPagas.length + ' pago(s) de ' + contas.length;
+
+  document.getElementById('statInvestidoMes').textContent = fmtBRL(totalInvestidoMes);
+  document.getElementById('statInvestidoMesFoot').textContent = invsMes.length + ' aporte(s)';
+
+  document.getElementById('statSaldoMes').textContent = fmtBRL(saldoMes);
+  document.getElementById('statSaldoMes').className = 'value ' + (saldoMes>=0?'c-green':'c-red');
+
+  document.getElementById('statSaldoLivre').textContent = fmtBRL(saldoLivre);
+  document.getElementById('statSaldoLivre').className = 'value ' + (saldoLivre>=0?'c-green':'c-red');
+
+  const summary = document.getElementById('monthSummary');
+  if(summary){
+    const totalPendente = contas.filter(c=>getContaStatus(c,month)==='pendente').reduce((s,c)=>s+getContaEffective(c,month).valor,0);
+    summary.innerHTML = `
+      <div><div class="ms-title">Resumo do Mês (${monthLabelForKey(month)})</div></div>
+      <div class="ms-items">
+        <div class="ms-item">Entradas<b>${fmtBRL(totalRec)}</b></div>
+        <div class="ms-item">Saídas pagas<b>${fmtBRL(totalGastosPago)}</b></div>
+        <div class="ms-item">Pendente pagar<b>${fmtBRL(totalPendente)}</b></div>
+        <div class="ms-item">Investimentos<b>${fmtBRL(totalInvestidoMes)}</b></div>
+      </div>
+    `;
+  }
+
+  // Patrimônio Líquido + Pendências Rápidas
+  const saldoInvestimentos = state.investimentos.reduce((s,inv)=> s + inv.saldo, 0);
+  const saldoDividas = state.dividas.reduce((s,d)=> s + (d.parcelasTotal - d.parcelasPagas)*d.valorParcela, 0);
+  const patrimonio = saldoInvestimentos - saldoDividas;
+
+  document.getElementById('miniPatrimonio').textContent = fmtBRL(patrimonio);
+  const totalPendenciasGeral = contas.filter(c=>getContaStatus(c,month)==='pendente').reduce((s,c)=>s+getContaEffective(c,month).valor,0);
+  document.getElementById('miniPendencias').textContent = fmtBRL(totalPendenciasGeral);
+
+  // Donut
+  renderDonut(saldoInvestimentos, totalRec, totalGastosPago, saldoDividas);
+
+  // Próximos Vencimentos
+  renderUpcoming(month);
 }
 
-window.addEventListener('error', function(e){
-  console.error('Erro não tratado', e.error || e.message);
+function renderDonut(invest, rec, gastos, dividas){
+  const holder = document.getElementById('donutHolder');
+  if(!holder) return;
+
+  const total = invest + rec + gastos + dividas || 1;
+  const pInvest = (invest/total)*100;
+  const pRec = (rec/total)*100;
+  const pGastos = (gastos/total)*100;
+  const pDividas = (dividas/total)*100;
+
+  holder.innerHTML = `
+    <div style="width:120px; height:120px; border-radius:50%; background:conic-gradient(
+      var(--blue) 0% ${pInvest}%,
+      var(--green) ${pInvest}% ${pInvest+pRec}%,
+      var(--red) ${pInvest+pRec}% ${pInvest+pRec+pGastos}%,
+      var(--gold) ${pInvest+pRec+pGastos}% 100%
+    ); display:flex; align-items:center; justify-content:center; flex:none;">
+      <div style="width:74px; height:74px; background:var(--paper); border-radius:50%;"></div>
+    </div>
+    <div class="donut-legend">
+      <div class="li"><span class="lft"><span class="sw bg-blue"></span>Investimentos</span><b>${fmtBRL(invest)}</b></div>
+      <div class="li"><span class="lft"><span class="sw bg-green"></span>Receitas</span><b>${fmtBRL(rec)}</b></div>
+      <div class="li"><span class="lft"><span class="sw bg-red"></span>Gastos</span><b>${fmtBRL(gastos)}</b></div>
+      <div class="li"><span class="lft"><span class="sw bg-gold"></span>Dívidas</span><b>${fmtBRL(dividas)}</b></div>
+    </div>
+  `;
+}
+
+function renderUpcoming(month){
+  const list = document.getElementById('upcomingList');
+  if(!list) return;
+
+  const pendentesContas = monthContas(month).filter(c=>getContaStatus(c,month)==='pendente').map(c=>{
+    const eff = getContaEffective(c,month);
+    return {
+      nome: eff.nome,
+      categoria: eff.categoria,
+      valor: eff.valor,
+      dia: eff.dia || 1,
+      tipo: 'conta'
+    };
+  });
+
+  const pendentesDividas = state.dividas.filter(d=> d.parcelasPagas < d.parcelasTotal).map(d=>{
+    return {
+      nome: d.nome,
+      categoria: d.tipo,
+      valor: d.valorParcela,
+      dia: d.dia || 1,
+      tipo: 'dívida'
+    };
+  });
+
+  const todos = [...pendentesContas, ...pendentesDividas].sort((a,b)=>a.dia - b.dia).slice(0, 5);
+
+  if(!todos.length){
+    list.innerHTML = `<li style="text-align:center; color:var(--paper-text-dim); padding:20px 0;">Nenhum vencimento pendente neste mês! 🎉</li>`;
+    return;
+  }
+
+  list.innerHTML = todos.map(item=>`
+    <li>
+      <div class="day">${String(item.dia).padStart(2,'0')}</div>
+      <div class="info">
+        <div class="nm">${escapeHtml(item.nome)}</div>
+        <div class="ct">${escapeHtml(item.categoria)} · ${item.tipo}</div>
+      </div>
+      <div class="amt c-red">${fmtBRL(item.valor)}</div>
+    </li>
+  `).join('');
+}
+
+function renderAll(){
+  renderDashboard();
+  renderReceitas();
+  renderContas();
+  renderDividas();
+  renderInvestimentos();
+  renderScenarios();
+  runSimulation();
+}
+
+/* ======================================================================
+   INICIALIZAÇÃO DA APLICAÇÃO
+   ====================================================================== */
+window.addEventListener('DOMContentLoaded', ()=>{
+  try{
+    const m = currentMonthKey();
+    setControlMonth(m);
+  }catch(e){
+    console.error('Erro na inicialização:', e);
+    const errBox = document.getElementById('bootError');
+    if(errBox){
+      errBox.classList.add('show');
+      document.getElementById('bootErrorMsg').textContent = e.stack || e.message;
+    }
+  }
 });
 </script>
 </body>
