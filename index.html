@@ -314,6 +314,7 @@ h2.block-title span.tag{
   background:var(--paper-2); border:1px solid var(--paper-line-2);
   font-size:11px; color:var(--paper-text-dim); font-weight:600;
 }
+.chip-edit{background:rgba(201,162,75,0.18); border-color:transparent; color:var(--gold-dark);}
 
 .empty{
   text-align:center; padding:50px 20px; color:var(--paper-text-dim);
@@ -634,7 +635,7 @@ body{overflow-x:hidden;}
     <!-- ---------- RECEITAS ---------- -->
     <section class="section" id="sec-receitas">
       <div class="topbar"><div><h1>Receitas</h1><div class="sub">Salário, renda extra, valores avulsos e outras entradas</div></div>
-        <div class="topbar-actions"><button class="btn btn-primary" onclick="openReceitaModal()">+ Nova receita</button></div>
+        <div class="topbar-actions"><div class="month-filter" style="margin:0;"><label>Mês</label><input type="month" id="receitasMonth" onchange="setControlMonth(this.value)"></div><button class="btn btn-primary" onclick="openReceitaModal()">+ Nova receita</button></div>
       </div>
       <div class="paper paper-pad" id="receitasHolder"></div>
     </section>
@@ -803,6 +804,15 @@ body{overflow-x:hidden;}
       <div class="field"><label>Data do recebimento</label><input type="date" id="receitaData"></div>
       <div class="field"><label>Forma / origem</label><input type="text" id="receitaOrigem" placeholder="Ex: Empresa, cliente, Pix..."></div>
       <label class="checkline"><input type="checkbox" id="receitaRecorrente"> Receita recorrente (repete todo mês)</label>
+      <div class="field full" id="receitaEscopoWrap" style="display:none;">
+        <label>Aplicar esta alteração</label>
+        <select id="receitaEscopo">
+          <option value="mes">Somente neste mês</option>
+          <option value="sempre">A partir deste mês, em todas as próximas ocorrências</option>
+          <option value="encerrar">Encerrar — não repetir mais a partir deste mês</option>
+        </select>
+        <span class="hint">Meses já personalizados individualmente não são afetados.</span>
+      </div>
       <div class="field full"><label>Observação (opcional)</label><input type="text" id="receitaObs" placeholder="Alguma nota sobre essa entrada"></div>
     </div>
     <div class="form-actions"><button class="btn btn-ghost" onclick="closeModal('modalReceita')">Cancelar</button><button class="btn btn-primary" onclick="saveReceita()">Salvar receita</button></div>
@@ -814,6 +824,11 @@ body{overflow-x:hidden;}
   <div class="modal">
     <h3><span id="modalContaTitle">Nova conta</span><button class="close" onclick="closeModal('modalConta')">✕</button></h3>
     <input type="hidden" id="contaId">
+    <div class="field full" style="background:var(--paper-2);padding:10px 12px;border-radius:8px;border:1px solid var(--paper-line);">
+      <label>Mês que estou editando</label>
+      <input type="month" id="contaMesEdicao" onchange="setControlMonth(this.value)">
+      <small style="color:var(--paper-text-dim)">Alterações de contas recorrentes ficam somente neste mês, por padrão.</small>
+    </div>
     <div class="form-grid">
       <div class="field full">
         <label>Nome da conta</label>
@@ -827,6 +842,14 @@ body{overflow-x:hidden;}
           <option>Educação</option><option>Lazer</option><option>Assinaturas</option><option>Outros</option>
         </select>
       </div>
+<div class="month-filter" style="margin:0;">
+  <label>Tipo</label>
+  <select id="filtroTipoContas" onchange="renderContas()">
+    <option value="">Todos</option>
+    <option value="recorrente">Recorrentes</option>
+    <option value="avulsa">Avulsas</option>
+  </select>
+</div>
       <div class="field">
         <label>Valor (R$)</label>
         <input type="number" id="contaValor" min="0" step="0.01" placeholder="0,00">
@@ -836,7 +859,7 @@ body{overflow-x:hidden;}
         <input type="date" id="contaData" onchange="syncDayFromDate('contaData','contaDia')">
         <small style="color:var(--paper-text-dim)">Para recorrente, começa a partir deste mês.</small>
       </div>
-      <div class="field">
+      <div class="field" style="display:none;">
         <label>Dia do vencimento</label>
         <input type="number" id="contaDia" min="1" max="31" placeholder="Ex: 10">
       </div>
@@ -845,6 +868,16 @@ body{overflow-x:hidden;}
         <select id="contaStatus"><option value="pendente">Pendente</option><option value="pago">Pago</option></select>
       </div>
       <label class="checkline"><input type="checkbox" id="contaRecorrente" checked> Conta recorrente (repete todo mês)</label>
+      <div id="contaRecorrenteHint" class="hint" style="grid-column:1/-1;margin-top:-6px;">Ao desmarcar durante a edição, esta ocorrência vira avulsa neste mês e as ocorrências dos meses seguintes são removidas.</div>
+      <div class="field full" id="contaEscopoWrap" style="display:none;">
+        <label>Aplicar esta alteração</label>
+        <select id="contaEscopo">
+          <option value="mes">Somente neste mês</option>
+          <option value="sempre">A partir deste mês, em todas as próximas ocorrências</option>
+          <option value="encerrar">Encerrar — não repetir mais a partir deste mês</option>
+        </select>
+        <span class="hint">Meses já personalizados individualmente não são afetados.</span>
+      </div>
       <div class="field full">
         <label>Observação (opcional)</label>
         <input type="text" id="contaObs" placeholder="Alguma nota sobre essa conta">
@@ -895,10 +928,9 @@ body{overflow-x:hidden;}
         <input type="date" id="dividaData" onchange="syncDayFromDate('dividaData','dividaDia')">
         <small style="color:var(--paper-text-dim)">Define a partir de qual mês a dívida começa.</small>
       </div>
-      <div class="field">
+      <div class="field" style="display:none;">
         <label>Dia do vencimento</label>
         <input type="number" id="dividaDia" min="1" max="31" placeholder="Ex: 5">
-        <small style="color:var(--paper-text-dim)">É preenchido automaticamente pela data, mas você pode ajustar.</small>
       </div>
     </div>
     <div class="form-actions">
@@ -1039,16 +1071,41 @@ body{overflow-x:hidden;}
 const STORAGE_KEY = 'livroCaixa_v1';
 let state = loadState();
 if(!Array.isArray(state.receitas)) state.receitas = [];
+state.receitas.forEach(r=>{ if(!r.excluidaPorMes || typeof r.excluidaPorMes!=='object') r.excluidaPorMes={}; if(!r.edicoesPorMes || typeof r.edicoesPorMes!=='object') r.edicoesPorMes={}; });
 state.contas = Array.isArray(state.contas) ? state.contas : [];
 state.contas.forEach(c=>{
+  // Compatibilidade com uma versão anterior deste app, que guardava a data
+  // como "dataVencimento" e as exceções por mês num único objeto "overrides".
+  if(!c.data && c.dataVencimento) c.data = c.dataVencimento;
   if(!c.data) c.data = todayISO();
+  if(!c.dia){ const p=String(c.data).split('-'); if(p.length===3) c.dia=parseInt(p[2],10)||1; }
   if(!c.statusPorMes || typeof c.statusPorMes!=='object') c.statusPorMes={};
+  if(!c.edicoesPorMes || typeof c.edicoesPorMes!=='object') c.edicoesPorMes={};
+  if(!c.excluidaPorMes || typeof c.excluidaPorMes!=='object') c.excluidaPorMes={};
+  if(c.overrides && typeof c.overrides==='object'){
+    Object.keys(c.overrides).forEach(mk=>{
+      const ov=c.overrides[mk];
+      if(!ov) return;
+      if(ov.skip){ c.excluidaPorMes[mk]=true; return; }
+      const edicao={};
+      if(ov.valor!=null) edicao.valor=ov.valor;
+      if(ov.dataVencimento){ edicao.data=ov.dataVencimento; const p=ov.dataVencimento.split('-'); if(p.length===3) edicao.dia=parseInt(p[2],10); }
+      if(ov.obs!=null) edicao.obs=ov.obs;
+      if(Object.keys(edicao).length) c.edicoesPorMes[mk]=edicao;
+      if(ov.status) c.statusPorMes[mk]=ov.status;
+    });
+  }
   // Migração segura: preserva o status antigo somente no mês atual.
   // A partir daí, cada mês começa como pendente até ser pago naquele mês.
   const mesAtual=currentMonthKey();
   if(!Object.prototype.hasOwnProperty.call(c.statusPorMes,mesAtual) && c.status) c.statusPorMes[mesAtual]=c.status;
 });
 state.dividas = Array.isArray(state.dividas) ? state.dividas : [];
+state.dividas.forEach(d=>{
+  if(!d.data && d.dataVencimento) d.data = d.dataVencimento;
+  if(!d.data) d.data = todayISO();
+  if(!d.dia){ const p=String(d.data).split('-'); if(p.length===3) d.dia=parseInt(p[2],10)||1; }
+});
 state.investimentos = Array.isArray(state.investimentos) ? state.investimentos : [];
 
 function loadState(){
@@ -1074,6 +1131,12 @@ function uid(){ return 'id_' + Date.now().toString(36) + Math.random().toString(
 const fmtBRL = n => (isFinite(n)?n:0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
 const fmtNum = n => (isFinite(n)?n:0).toLocaleString('pt-BR', {maximumFractionDigits:1});
 function currentMonthKey(d=new Date()){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function monthLabelForKey(key){
+  if(!key) return '';
+  const p=String(key).split('-');
+  if(p.length!==2) return key;
+  return new Date(Number(p[0]),Number(p[1])-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+}
 function monthLabel(offset=0){
   const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()+offset);
   return d.toLocaleDateString('pt-BR', {month:'short', year:'2-digit'}).replace('.','');
@@ -1085,6 +1148,33 @@ function toast(msg, type='ok'){
   el.textContent = msg;
   stack.appendChild(el);
   setTimeout(()=>{ el.style.opacity='0'; el.style.transition='opacity .3s'; setTimeout(()=>el.remove(),300); }, 2600);
+}
+function fmtDateBR(dateStr){
+  if(!dateStr) return '';
+  return new Date(dateStr+'T00:00:00').toLocaleDateString('pt-BR');
+}
+function fmtDateShort(dateStr){
+  if(!dateStr) return '';
+  return new Date(dateStr+'T00:00:00').toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'});
+}
+/* Monta a data do dia informado dentro do mês/ano de "monthKey" (YYYY-MM),
+   ajustando (clamp) para o último dia válido daquele mês. */
+function buildDateForMonth(dayNum, monthKey){
+  const [y,m] = monthKey.split('-').map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  const d = Math.min(dayNum||1, lastDay);
+  return `${monthKey}-${String(d).padStart(2,'0')}`;
+}
+/* Soma/subtrai N meses a uma data (YYYY-MM-DD), preservando o dia quando possível. */
+function addMonthsToDate(dateStr, delta){
+  const parts = dateStr.split('-').map(Number);
+  const day = parts[2];
+  const total = (parts[1]-1) + delta;
+  const newY = parts[0] + Math.floor(total/12);
+  const newM = ((total%12)+12)%12 + 1;
+  const lastDay = new Date(newY, newM, 0).getDate();
+  const d = Math.min(day, lastDay);
+  return `${newY}-${String(newM).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 }
 
 /* ======================================================================
@@ -1140,17 +1230,32 @@ document.querySelectorAll('.modal-overlay').forEach(ov=>{
 /* ======================================================================
    RECEITAS
    ====================================================================== */
+function ensureReceitaEdicoes(r){ if(!r.edicoesPorMes || typeof r.edicoesPorMes!=='object') r.edicoesPorMes={}; return r.edicoesPorMes; }
+function ensureReceitaExclusoes(r){ if(!r.excluidaPorMes || typeof r.excluidaPorMes!=='object') r.excluidaPorMes={}; return r.excluidaPorMes; }
+function getReceitaEffective(r,month){
+  const override=ensureReceitaEdicoes(r)[month];
+  return override ? {...r,...override} : r;
+}
 function openReceitaModal(id=null){
+  const month = getControlMonth();
   const r = id ? state.receitas.find(x=>x.id===id) : null;
-  document.getElementById('modalReceitaTitle').textContent = r ? 'Editar receita' : 'Nova receita';
+  const eff = r && r.recorrente ? getReceitaEffective(r,month) : r;
+  document.getElementById('modalReceitaTitle').textContent = r ? 'Editar receita — '+monthLabelForKey(month) : 'Nova receita';
   document.getElementById('receitaId').value = id || '';
-  document.getElementById('receitaNome').value = r ? r.nome : '';
-  document.getElementById('receitaTipo').value = r ? r.tipo : 'Salário';
-  document.getElementById('receitaValor').value = r ? r.valor : '';
-  document.getElementById('receitaData').value = r ? r.data : todayISO();
-  document.getElementById('receitaOrigem').value = r ? (r.origem||'') : '';
+  document.getElementById('receitaNome').value = eff ? eff.nome : '';
+  document.getElementById('receitaTipo').value = eff ? eff.tipo : 'Salário';
+  document.getElementById('receitaValor').value = eff ? eff.valor : '';
+  document.getElementById('receitaData').value = eff ? (eff.data || todayISO()) : (r ? todayISO() : buildDateForMonth(new Date().getDate(), month));
+  document.getElementById('receitaOrigem').value = eff ? (eff.origem||'') : '';
   document.getElementById('receitaRecorrente').checked = r ? !!r.recorrente : false;
-  document.getElementById('receitaObs').value = r ? (r.obs||'') : '';
+  document.getElementById('receitaObs').value = eff ? (eff.obs||'') : '';
+  const escopoWrap = document.getElementById('receitaEscopoWrap');
+  if(r && r.recorrente){
+    escopoWrap.style.display = '';
+    document.getElementById('receitaEscopo').value = 'mes';
+  }else{
+    escopoWrap.style.display = 'none';
+  }
   openModal('modalReceita');
 }
 function saveReceita(){
@@ -1159,18 +1264,70 @@ function saveReceita(){
   const data=document.getElementById('receitaData').value || todayISO();
   if(!nome || !isFinite(valor) || valor<=0){toast('Informe descrição e um valor válido para a receita.','err');return;}
   const id=document.getElementById('receitaId').value;
-  const item={nome,valor,data,tipo:document.getElementById('receitaTipo').value,origem:document.getElementById('receitaOrigem').value.trim(),recorrente:document.getElementById('receitaRecorrente').checked,obs:document.getElementById('receitaObs').value.trim()};
-  if(id){Object.assign(state.receitas.find(x=>x.id===id),item);toast('Receita atualizada.');}
-  else{state.receitas.push({id:uid(),...item});toast('Receita adicionada.');}
+  const month = getControlMonth();
+  const tipo=document.getElementById('receitaTipo').value;
+  const origem=document.getElementById('receitaOrigem').value.trim();
+  const recorrente=document.getElementById('receitaRecorrente').checked;
+  const obs=document.getElementById('receitaObs').value.trim();
+  if(id){
+    const r=state.receitas.find(x=>x.id===id);
+    if(!r){toast('Receita não encontrada.','err');return;}
+    if(r.recorrente){
+      const scope=document.getElementById('receitaEscopo').value;
+      if(scope==='sempre'){
+        r.nome=nome; r.valor=valor; r.tipo=tipo; r.origem=origem; r.obs=obs;
+        toast('Alteração aplicada a partir de '+monthLabelForKey(month)+', em diante.');
+      }else if(scope==='encerrar'){
+        r.fimEm=month;
+        toast('Receita encerrada a partir de '+monthLabelForKey(month)+'.');
+      }else{
+        ensureReceitaEdicoes(r)[month]={nome,valor,data,tipo,origem,obs};
+        ensureReceitaExclusoes(r)[month]=false;
+        toast('Alteração aplicada somente a '+monthLabelForKey(month)+'.');
+      }
+    }else{
+      Object.assign(r,{nome,valor,data,tipo,origem,obs});
+      toast('Receita atualizada.');
+    }
+  }else{
+    const novo={id:uid(),nome,valor,data,tipo,origem,recorrente,obs};
+    if(recorrente){ novo.edicoesPorMes={}; novo.excluidaPorMes={}; }
+    state.receitas.push(novo);
+    toast('Receita adicionada.');
+  }
   saveState();closeModal('modalReceita');renderAll();
 }
-function deleteReceita(id){if(!confirm('Excluir esta receita?'))return;state.receitas=state.receitas.filter(x=>x.id!==id);saveState();renderAll();toast('Receita excluída.');}
+/* Remove a ocorrência de apenas um mês específico, sem afetar os demais meses */
+function removeReceitaMonth(id, month){
+  const r = state.receitas.find(x=>x.id===id);
+  if(!r) return;
+  if(!confirm(`Remover "${r.nome}" apenas em ${monthLabelForKey(month)}? Os outros meses continuam normais.`)) return;
+  ensureReceitaExclusoes(r)[month]=true;
+  saveState(); renderAll(); toast('Removida apenas em '+monthLabelForKey(month)+'.');
+}
+function deleteReceita(id){
+  const r=state.receitas.find(x=>x.id===id);
+  if(!r) return;
+  const msg = r.recorrente
+    ? 'Excluir esta receita recorrente definitivamente? Isso remove TODOS os meses, passados e futuros (todo o histórico).'
+    : 'Excluir esta receita?';
+  if(!confirm(msg))return;
+  state.receitas=state.receitas.filter(x=>x.id!==id);
+  saveState();renderAll();toast('Receita excluída.');
+}
 function renderReceitas(){
   const holder=document.getElementById('receitasHolder');
-  if(!state.receitas.length){holder.innerHTML='<div class="empty"><div class="glyph">↗</div><h3>Nenhuma receita cadastrada</h3><p>Cadastre seu salário e outras entradas para acompanhar quanto entra por mês.</p><button class="btn btn-primary" onclick="openReceitaModal()">+ Nova receita</button></div>';return;}
-  const ordered=[...state.receitas].sort((a,b)=>String(b.data).localeCompare(String(a.data)));
-  const total=ordered.reduce((s,r)=>s+r.valor,0);
-  holder.innerHTML=`<table class="ledger"><thead><tr><th>Receita</th><th>Tipo</th><th>Origem</th><th>Data</th><th class="num">Valor</th><th>Tipo</th><th></th></tr></thead><tbody>${ordered.map(r=>`<tr><td>${escapeHtml(r.nome)}${r.obs?`<div style="font-size:11px;color:var(--paper-text-dim)">${escapeHtml(r.obs)}</div>`:''}</td><td><span class="chip">${escapeHtml(r.tipo)}</span></td><td>${escapeHtml(r.origem||'—')}</td><td>${new Date(r.data+'T00:00:00').toLocaleDateString('pt-BR')}</td><td class="num c-green">${fmtBRL(r.valor)}</td><td>${r.recorrente?'<span class="chip">recorrente</span>':'<span class="chip">avulsa</span>'}</td><td><div class="row-actions"><button class="icon-btn" title="Editar" onclick="openReceitaModal('${r.id}')">✎</button><button class="icon-btn warn" title="Excluir" onclick="deleteReceita('${r.id}')">✕</button></div></td></tr>`).join('')}</tbody><tfoot><tr><td colspan="3">Total cadastrado</td><td></td><td class="num c-green">${fmtBRL(total)}</td><td colspan="2"></td></tr></tfoot></table>`;
+  const month=getControlMonth();
+  const input=document.getElementById('receitasMonth'); if(input && input.value!==month) input.value=month;
+  const receitasDoMes=monthReceitas(month);
+  if(!receitasDoMes.length){holder.innerHTML='<div class="empty"><div class="glyph">↗</div><h3>Nenhuma receita cadastrada</h3><p>Cadastre seu salário e outras entradas para acompanhar quanto entra por mês.</p><button class="btn btn-primary" onclick="openReceitaModal()">+ Nova receita</button></div>';return;}
+  const ordered=[...receitasDoMes].sort((a,b)=>String(getReceitaEffective(b,month).data||'').localeCompare(String(getReceitaEffective(a,month).data||'')));
+  const total=ordered.reduce((s,r)=>s+getReceitaEffective(r,month).valor,0);
+  holder.innerHTML=`<table class="ledger"><thead><tr><th>Receita</th><th>Tipo</th><th>Origem</th><th>Data</th><th class="num">Valor</th><th>Tipo</th><th></th></tr></thead><tbody>${ordered.map(r=>{
+    const eff=getReceitaEffective(r,month);
+    const hasOverride = !!(r.edicoesPorMes && r.edicoesPorMes[month]);
+    return `<tr><td>${escapeHtml(eff.nome)}${eff.obs?`<div style="font-size:11px;color:var(--paper-text-dim)">${escapeHtml(eff.obs)}</div>`:''}</td><td><span class="chip">${escapeHtml(eff.tipo)}</span></td><td>${escapeHtml(eff.origem||'—')}</td><td>${fmtDateBR(eff.data)}</td><td class="num c-green">${fmtBRL(eff.valor)}</td><td>${r.recorrente?'<span class="chip">recorrente</span>':'<span class="chip">avulsa</span>'}${hasOverride?' <span class="chip chip-edit">editado</span>':''}</td><td><div class="row-actions"><button class="icon-btn" title="Editar" onclick="openReceitaModal('${r.id}')">✎</button>${r.recorrente?`<button class="icon-btn" title="Remover somente este mês" onclick="removeReceitaMonth('${r.id}','${month}')">⊘</button>`:''}<button class="icon-btn warn" title="${r.recorrente?'Excluir definitivamente (todos os meses)':'Excluir'}" onclick="deleteReceita('${r.id}')">🗑</button></div></td></tr>`;
+  }).join('')}</tbody><tfoot><tr><td colspan="3">Total do mês</td><td></td><td class="num c-green">${fmtBRL(total)}</td><td colspan="2"></td></tr></tfoot></table>`;
 }
 function getDashboardMonth(){return document.getElementById('dashboardMonth')?.value || currentMonthKey();}
 function getControlMonth(){
@@ -1180,6 +1337,7 @@ function setControlMonth(month){
   const m = month || currentMonthKey();
   const d=document.getElementById('dashboardMonth'); if(d) d.value=m;
   const c=document.getElementById('contasMonth'); if(c) c.value=m;
+  const r=document.getElementById('receitasMonth'); if(r) r.value=m;
   renderAll();
 }
 function inMonth(date,month){return String(date||'').slice(0,7)===month;}
@@ -1187,12 +1345,24 @@ function ensureContaMensal(c){
   if(!c.statusPorMes || typeof c.statusPorMes!=='object') c.statusPorMes={};
   return c.statusPorMes;
 }
+function ensureContaEdicoes(c){
+  if(!c.edicoesPorMes || typeof c.edicoesPorMes!=='object') c.edicoesPorMes={};
+  return c.edicoesPorMes;
+}
+function ensureContaExclusoes(c){
+  if(!c.excluidaPorMes || typeof c.excluidaPorMes!=='object') c.excluidaPorMes={};
+  return c.excluidaPorMes;
+}
+function getContaEffective(c,month){
+  const override=ensureContaEdicoes(c)[month];
+  return override ? {...c,...override} : c;
+}
 function getContaStatus(c,month){
-  // Contas avulsas existem somente no mês da data de lançamento.
   if(!c.recorrente && !inMonth(c.data,month)) return null;
+  if(c.recorrente && ensureContaExclusoes(c)[month]) return null;
+  const eff=getContaEffective(c,month);
   const map=ensureContaMensal(c);
   if(Object.prototype.hasOwnProperty.call(map,month)) return map[month];
-  // Compatibilidade: uma conta antiga marcada como paga fica paga apenas no mês em que foi marcada.
   if(!c.recorrente && inMonth(c.data,month)) return c.status || 'pendente';
   return 'pendente';
 }
@@ -1206,17 +1376,32 @@ function startsOnOrBeforeMonth(item, month){
   return !inicio || !month || inicio<=month;
 }
 function monthContas(month){
-  return state.contas.filter(c => c.recorrente ? startsOnOrBeforeMonth(c,month) : inMonth(c.data,month));
+  return state.contas.filter(c => {
+    if(c.recorrente){
+      if(!startsOnOrBeforeMonth(c,month)) return false;
+      if(c.fimEm && month>=c.fimEm) return false;
+      if(ensureContaExclusoes(c)[month]) return false;
+      return true;
+    }
+    return inMonth(c.data,month);
+  });
 }
 function monthReceitas(month){
-  return state.receitas.filter(r => r.recorrente ? startsOnOrBeforeMonth(r,month) : inMonth(r.data,month));
+  return state.receitas.filter(r => {
+    if(r.recorrente){
+      if(!startsOnOrBeforeMonth(r,month)) return false;
+      if(r.fimEm && month>=r.fimEm) return false;
+      if(r.excluidaPorMes && r.excluidaPorMes[month]) return false;
+      return true;
+    }
+    return inMonth(r.data,month);
+  });
 }
 function monthInvestimentos(month){return state.investimentos.flatMap(inv=>ensureHistorico(inv).filter(h=>h.tipo==='aporte' && h.valor>0 && inMonth(h.data,month)));}
 
 /* ======================================================================
    CONTAS
    ====================================================================== */
-
 function syncDayFromDate(dateId, dayId){
   const el=document.getElementById(dateId);
   const day=document.getElementById(dayId);
@@ -1224,54 +1409,114 @@ function syncDayFromDate(dateId, dayId){
   const parts=el.value.split('-');
   if(parts.length===3){ const n=parseInt(parts[2],10); if(n>=1 && n<=31) day.value=n; }
 }
-
 function openContaModal(id=null){
+  const month=getControlMonth();
   const c = id ? state.contas.find(x=>x.id===id) : null;
-  document.getElementById('modalContaTitle').textContent = c ? 'Editar conta' : 'Nova conta';
+  const eff = c && c.recorrente ? getContaEffective(c,month) : c;
+  document.getElementById('modalContaTitle').textContent = c ? 'Editar conta — '+monthLabelForKey(month) : 'Nova conta — '+monthLabelForKey(month);
   document.getElementById('contaId').value = id || '';
-  document.getElementById('contaNome').value = c ? c.nome : '';
-  document.getElementById('contaCategoria').value = c ? c.categoria : 'Moradia';
-  document.getElementById('contaValor').value = c ? c.valor : '';
-  document.getElementById('contaData').value = c ? (c.data || todayISO()) : todayISO();
-  document.getElementById('contaDia').value = c ? c.dia : new Date().getDate();
-  if(c && c.data){ const parts=c.data.split('-'); if(parts.length===3) document.getElementById('contaDia').value=parseInt(parts[2],10)||c.dia; }
-  document.getElementById('contaStatus').value = c ? c.status : 'pendente';
-  document.getElementById('contaRecorrente').checked = c ? c.recorrente : true;
-  document.getElementById('contaObs').value = c ? (c.obs||'') : '';
+  document.getElementById('contaMesEdicao').value = month;
+  document.getElementById('contaNome').value = eff ? eff.nome : '';
+  document.getElementById('contaCategoria').value = eff ? eff.categoria : 'Moradia';
+  document.getElementById('contaValor').value = eff ? eff.valor : '';
+  document.getElementById('contaData').value = eff ? (eff.data || todayISO()) : (month+'-01');
+  document.getElementById('contaDia').value = eff ? eff.dia : (month===currentMonthKey()?new Date().getDate():1);
+  if(eff && eff.data){ const parts=eff.data.split('-'); if(parts.length===3) document.getElementById('contaDia').value=parseInt(parts[2],10)||eff.dia; }
+  document.getElementById('contaStatus').value = c ? (getContaStatus(c,month)||'pendente') : 'pendente';
+  document.getElementById('contaRecorrente').checked = c ? !!c.recorrente : true;
+  document.getElementById('contaObs').value = eff ? (eff.obs||'') : '';
+  const escopoWrap = document.getElementById('contaEscopoWrap');
+  if(c && c.recorrente){
+    escopoWrap.style.display = '';
+    document.getElementById('contaEscopo').value = 'mes';
+  }else{
+    escopoWrap.style.display = 'none';
+  }
   openModal('modalConta');
 }
 function saveConta(){
   const nome = document.getElementById('contaNome').value.trim();
   const valor = parseFloat(document.getElementById('contaValor').value);
   const dia = parseInt(document.getElementById('contaDia').value);
+  const month = document.getElementById('contaMesEdicao').value || getControlMonth();
   if(!nome || !isFinite(valor) || valor<0 || !dia || dia<1 || dia>31){
-    toast('Preencha nome, valor e um dia de vencimento válido (1–31).', 'err'); return;
+    toast('Preencha nome, valor e uma data de vencimento válida.', 'err'); return;
   }
   const id = document.getElementById('contaId').value;
-  const dataInicio = document.getElementById('contaData').value || todayISO();
+  const dataInicio = document.getElementById('contaData').value || (month+'-01');
   const dataParts = dataInicio.split('-');
   const diaData = parseInt(dataParts[2],10);
   const diaFinal = (diaData>=1 && diaData<=31) ? diaData : dia;
-  const data = {
-    nome, valor, dia:diaFinal,
-    data: dataInicio,
-    categoria: document.getElementById('contaCategoria').value,
-    status: document.getElementById('contaStatus').value,
-    recorrente: document.getElementById('contaRecorrente').checked,
-    obs: document.getElementById('contaObs').value.trim(),
-  };
+  const recorrente=document.getElementById('contaRecorrente').checked;
+  const categoria = document.getElementById('contaCategoria').value;
+  const status = document.getElementById('contaStatus').value;
+  const obs = document.getElementById('contaObs').value.trim();
+
   if(id){
-    Object.assign(state.contas.find(x=>x.id===id), data);
-    toast('Conta atualizada.');
+    const c=state.contas.find(x=>x.id===id);
+    if(!c){toast('Conta não encontrada.','err');return;}
+    if(c.recorrente){
+      // Se o usuário desmarcou "Conta recorrente", a série termina antes do mês editado
+      // e nasce uma nova conta avulsa somente neste mês. Os meses anteriores permanecem.
+      if(!recorrente){
+        c.fimEm = month;
+        if(c.edicoesPorMes) Object.keys(c.edicoesPorMes).forEach(k=>{ if(k>=month) delete c.edicoesPorMes[k]; });
+        if(c.statusPorMes) Object.keys(c.statusPorMes).forEach(k=>{ if(k>=month) delete c.statusPorMes[k]; });
+        if(c.excluidaPorMes) Object.keys(c.excluidaPorMes).forEach(k=>{ if(k>=month) delete c.excluidaPorMes[k]; });
+        const avulsa={
+          id:uid(), nome, valor, dia:diaFinal, data:dataInicio, categoria, status, recorrente:false, obs
+        };
+        state.contas.push(avulsa);
+        toast('Conta transformada em avulsa em '+monthLabelForKey(month)+'. Os meses seguintes foram removidos.');
+      }else{
+        const scope = document.getElementById('contaEscopo').value;
+        if(scope==='sempre'){
+          c.nome=nome; c.valor=valor; c.dia=diaFinal; c.categoria=categoria; c.obs=obs;
+          ensureContaMensal(c)[month]=status;
+          toast('Alteração aplicada a partir de '+monthLabelForKey(month)+', em diante.');
+        }else if(scope==='encerrar'){
+          c.fimEm = month;
+          toast('Conta encerrada a partir de '+monthLabelForKey(month)+'.');
+        }else{
+          ensureContaEdicoes(c)[month]={nome,valor,dia:diaFinal,data:dataInicio,categoria,obs};
+          ensureContaExclusoes(c)[month]=false;
+          ensureContaMensal(c)[month]=status;
+          toast('Alteração aplicada somente a '+monthLabelForKey(month)+'.');
+        }
+      }
+    }else{
+      Object.assign(c,{nome,valor,dia:diaFinal,data:dataInicio,categoria,status,obs,recorrente:false});
+      toast('Conta avulsa atualizada.');
+    }
   }else{
-    state.contas.push({id:uid(), ...data});
-    toast('Conta adicionada.');
+    // Nova conta nasce no mês escolhido. Se recorrente, repete dali para frente.
+    const novo={id:uid(),nome,valor,dia:diaFinal,data:dataInicio,categoria,status,recorrente,obs};
+    if(recorrente){
+      novo.statusPorMes={}; novo.edicoesPorMes={}; novo.excluidaPorMes={};
+      novo.statusPorMes[month]=status;
+    }
+    state.contas.push(novo);
+    toast('Conta adicionada em '+monthLabelForKey(month)+'.');
   }
   saveState(); closeModal('modalConta'); renderAll();
 }
+/* Remove a ocorrência de apenas um mês específico, sem afetar os demais meses */
+function removeContaMonth(id, month){
+  const c = state.contas.find(x=>x.id===id);
+  if(!c) return;
+  if(!confirm(`Remover "${c.nome}" apenas em ${monthLabelForKey(month)}? Os outros meses continuam normais.`)) return;
+  ensureContaExclusoes(c)[month]=true;
+  saveState(); renderAll(); toast('Removida apenas em '+monthLabelForKey(month)+'.');
+}
+/* Exclui a conta inteira, com todo o seu histórico e futuras ocorrências */
 function deleteConta(id){
-  if(!confirm('Excluir esta conta?')) return;
-  state.contas = state.contas.filter(x=>x.id!==id);
+  const c=state.contas.find(x=>x.id===id);
+  if(!c)return;
+  const msg = c.recorrente
+    ? 'Excluir esta conta recorrente definitivamente? Isso remove TODOS os meses, passados e futuros (todo o histórico).'
+    : 'Excluir esta conta?';
+  if(!confirm(msg)) return;
+  state.contas=state.contas.filter(x=>x.id!==id);
   saveState(); renderAll(); toast('Conta excluída.');
 }
 function toggleContaStatus(id){
@@ -1279,9 +1524,8 @@ function toggleContaStatus(id){
   if(!c) return;
   const month=getControlMonth();
   const current=getContaStatus(c,month);
+  if(current===null){toast('Esta conta não está disponível no mês selecionado.','err');return;}
   ensureContaMensal(c)[month] = current==='pago' ? 'pendente' : 'pago';
-  // Mantém o campo legado coerente para contas avulsas, sem contaminar outros meses.
-  if(!c.recorrente && inMonth(c.data,month)) c.status=ensureContaMensal(c)[month];
   saveState(); renderAll();
 }
 
@@ -1326,26 +1570,40 @@ function renderContas(){
       <button class="btn btn-primary" onclick="openContaModal()">+ Nova conta</button></div>`;
     return;
   }
+  const filtroCategoria=document.getElementById('contasCategoriaFiltro')?.value || document.getElementById('filtroCategoriaContas')?.value || '';
+  const filtroTipo=document.getElementById('filtroTipoContas')?.value || '';
   const contasDoMes=monthContas(month);
-  if(!contasDoMes.length){
+  const contasFiltradas=contasDoMes.filter(c=>{
+    const eff=getContaEffective(c,currentControlMonth);
+    const categoria=String(eff.categoria||c.categoria||'Outros');
+    const recorrente=!!(eff.recorrente ?? c.recorrente);
+    const tipo=recorrente ? 'recorrente' : 'avulsa';
+    return (!filtroCategoria || categoria===filtroCategoria) &&
+           (!filtroTipo || tipo===filtroTipo);
+  });;
+  if(!contasFiltradas.length){
     holder.innerHTML = `<div class="empty"><div class="glyph">▤</div><h3>Nenhuma conta neste mês</h3><p>Não há contas avulsas ou recorrentes cadastradas para este período.</p><button class="btn btn-primary" onclick="openContaModal()">+ Nova conta</button></div>`;
     return;
   }
-  const ordered = [...contasDoMes].sort((a,b)=>a.dia-b.dia);
+  const ordered = [...contasDoMes].sort((a,b)=>(getContaEffective(a,month).dia||a.dia)-(getContaEffective(b,month).dia||b.dia));
   let totalPendente=0, totalPago=0;
   const rows = ordered.map(c=>{
+    const eff=getContaEffective(c,month);
     const status=getContaStatus(c,month) || 'pendente';
-    if(status==='pago') totalPago+=c.valor; else totalPendente+=c.valor;
+    const hasOverride = !!(c.edicoesPorMes && c.edicoesPorMes[month]);
+    const displayDate = c.recorrente ? buildDateForMonth(eff.dia, month) : eff.data;
+    if(status==='pago') totalPago+=eff.valor; else totalPendente+=eff.valor;
     return `<tr>
-      <td>${escapeHtml(c.nome)}${c.obs?`<div style="font-size:11px;color:var(--paper-text-dim)">${escapeHtml(c.obs)}</div>`:''}</td>
-      <td><span class="chip">${escapeHtml(c.categoria)}</span></td>
-      <td class="num">${fmtBRL(c.valor)}</td>
-      <td class="num">dia ${c.dia}</td>
-      <td>${c.recorrente?'<span class="chip">recorrente</span>':'<span class="chip">avulsa</span>'}</td>
+      <td>${escapeHtml(eff.nome)}${eff.obs?`<div style="font-size:11px;color:var(--paper-text-dim)">${escapeHtml(eff.obs)}</div>`:''}</td>
+      <td><span class="chip">${escapeHtml(eff.categoria)}</span></td>
+      <td class="num">${fmtBRL(eff.valor)}</td>
+      <td class="num">${fmtDateShort(displayDate)}</td>
+      <td>${c.recorrente?'<span class="chip">recorrente</span>':'<span class="chip">avulsa</span>'}${hasOverride?' <span class="chip chip-edit">editado</span>':''}</td>
       <td><button class="badge status-toggle ${status==='pago'?'badge-ok':'badge-pending'}" onclick="toggleContaStatus('${c.id}')">${status==='pago'?'✓ Pago':'⏳ Pendente'}</button></td>
       <td><div class="row-actions">
         <button class="icon-btn" title="Editar" onclick="openContaModal('${c.id}')">✎</button>
-        <button class="icon-btn warn" title="Excluir" onclick="deleteConta('${c.id}')">✕</button>
+        ${c.recorrente?`<button class="icon-btn" title="Remover somente este mês" onclick="removeContaMonth('${c.id}','${month}')">⊘</button>`:''}
+        <button class="icon-btn warn" title="${c.recorrente?'Excluir definitivamente (todos os meses)':'Excluir'}" onclick="deleteConta('${c.id}')">🗑</button>
       </div></td>
     </tr>`;
   }).join('');
@@ -1418,7 +1676,14 @@ function deleteDivida(id){
 }
 function pagarParcela(id){
   const d = state.dividas.find(x=>x.id===id);
-  if(d.parcelasPagas < d.parcelasTotal){ d.parcelasPagas++; saveState(); renderAll(); toast('Parcela registrada como paga.'); }
+  if(d.parcelasPagas < d.parcelasTotal){
+    d.parcelasPagas++;
+    if(d.parcelasPagas < d.parcelasTotal && d.data){
+      d.data = addMonthsToDate(d.data, 1);
+      d.dia = parseInt(d.data.split('-')[2], 10);
+    }
+    saveState(); renderAll(); toast('Parcela registrada como paga.');
+  }
 }
 function renderDividas(){
   const holder = document.getElementById('dividasHolder');
@@ -1438,7 +1703,7 @@ function renderDividas(){
       <div class="debt-head">
         <div>
           <h4>${escapeHtml(d.nome)}</h4>
-          <div class="debt-meta">${escapeHtml(d.tipo)} · vence dia ${d.dia}${d.taxa?` · juros ${d.taxa}% a.m.`:''}</div>
+          <div class="debt-meta">${escapeHtml(d.tipo)}${quitada?'':` · próxima parcela em ${fmtDateBR(d.data)}`}${d.taxa?` · juros ${d.taxa}% a.m.`:''}</div>
         </div>
         <span class="badge ${quitada?'badge-ok':'badge-danger'}">${quitada?'✓ Quitada':pct+'% quitado'}</span>
       </div>
