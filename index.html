@@ -842,14 +842,6 @@ body{overflow-x:hidden;}
           <option>Educação</option><option>Lazer</option><option>Assinaturas</option><option>Outros</option>
         </select>
       </div>
-<div class="month-filter" style="margin:0;">
-  <label>Tipo</label>
-  <select id="filtroTipoContas" onchange="renderContas()">
-    <option value="">Todos</option>
-    <option value="recorrente">Recorrentes</option>
-    <option value="avulsa">Avulsas</option>
-  </select>
-</div>
       <div class="field">
         <label>Valor (R$)</label>
         <input type="number" id="contaValor" min="0" step="0.01" placeholder="0,00">
@@ -868,7 +860,6 @@ body{overflow-x:hidden;}
         <select id="contaStatus"><option value="pendente">Pendente</option><option value="pago">Pago</option></select>
       </div>
       <label class="checkline"><input type="checkbox" id="contaRecorrente" checked> Conta recorrente (repete todo mês)</label>
-      <div id="contaRecorrenteHint" class="hint" style="grid-column:1/-1;margin-top:-6px;">Ao desmarcar durante a edição, esta ocorrência vira avulsa neste mês e as ocorrências dos meses seguintes são removidas.</div>
       <div class="field full" id="contaEscopoWrap" style="display:none;">
         <label>Aplicar esta alteração</label>
         <select id="contaEscopo">
@@ -1456,37 +1447,23 @@ function saveConta(){
     const c=state.contas.find(x=>x.id===id);
     if(!c){toast('Conta não encontrada.','err');return;}
     if(c.recorrente){
-      // Se o usuário desmarcou "Conta recorrente", a série termina antes do mês editado
-      // e nasce uma nova conta avulsa somente neste mês. Os meses anteriores permanecem.
-      if(!recorrente){
+      const scope = document.getElementById('contaEscopo').value;
+      if(scope==='sempre'){
+        c.nome=nome; c.valor=valor; c.dia=diaFinal; c.categoria=categoria; c.obs=obs;
+        ensureContaMensal(c)[month]=status;
+        toast('Alteração aplicada a partir de '+monthLabelForKey(month)+', em diante.');
+      }else if(scope==='encerrar'){
         c.fimEm = month;
-        if(c.edicoesPorMes) Object.keys(c.edicoesPorMes).forEach(k=>{ if(k>=month) delete c.edicoesPorMes[k]; });
-        if(c.statusPorMes) Object.keys(c.statusPorMes).forEach(k=>{ if(k>=month) delete c.statusPorMes[k]; });
-        if(c.excluidaPorMes) Object.keys(c.excluidaPorMes).forEach(k=>{ if(k>=month) delete c.excluidaPorMes[k]; });
-        const avulsa={
-          id:uid(), nome, valor, dia:diaFinal, data:dataInicio, categoria, status, recorrente:false, obs
-        };
-        state.contas.push(avulsa);
-        toast('Conta transformada em avulsa em '+monthLabelForKey(month)+'. Os meses seguintes foram removidos.');
+        toast('Conta encerrada a partir de '+monthLabelForKey(month)+'.');
       }else{
-        const scope = document.getElementById('contaEscopo').value;
-        if(scope==='sempre'){
-          c.nome=nome; c.valor=valor; c.dia=diaFinal; c.categoria=categoria; c.obs=obs;
-          ensureContaMensal(c)[month]=status;
-          toast('Alteração aplicada a partir de '+monthLabelForKey(month)+', em diante.');
-        }else if(scope==='encerrar'){
-          c.fimEm = month;
-          toast('Conta encerrada a partir de '+monthLabelForKey(month)+'.');
-        }else{
-          ensureContaEdicoes(c)[month]={nome,valor,dia:diaFinal,data:dataInicio,categoria,obs};
-          ensureContaExclusoes(c)[month]=false;
-          ensureContaMensal(c)[month]=status;
-          toast('Alteração aplicada somente a '+monthLabelForKey(month)+'.');
-        }
+        ensureContaEdicoes(c)[month]={nome,valor,dia:diaFinal,data:dataInicio,categoria,obs};
+        ensureContaExclusoes(c)[month]=false;
+        ensureContaMensal(c)[month]=status;
+        toast('Alteração aplicada somente a '+monthLabelForKey(month)+'.');
       }
     }else{
-      Object.assign(c,{nome,valor,dia:diaFinal,data:dataInicio,categoria,status,obs,recorrente:false});
-      toast('Conta avulsa atualizada.');
+      Object.assign(c,{nome,valor,dia:diaFinal,data:dataInicio,categoria,status,obs});
+      toast('Conta atualizada.');
     }
   }else{
     // Nova conta nasce no mês escolhido. Se recorrente, repete dali para frente.
@@ -1570,18 +1547,8 @@ function renderContas(){
       <button class="btn btn-primary" onclick="openContaModal()">+ Nova conta</button></div>`;
     return;
   }
-  const filtroCategoria=document.getElementById('contasCategoriaFiltro')?.value || document.getElementById('filtroCategoriaContas')?.value || '';
-  const filtroTipo=document.getElementById('filtroTipoContas')?.value || '';
   const contasDoMes=monthContas(month);
-  const contasFiltradas=contasDoMes.filter(c=>{
-    const eff=getContaEffective(c,currentControlMonth);
-    const categoria=String(eff.categoria||c.categoria||'Outros');
-    const recorrente=!!(eff.recorrente ?? c.recorrente);
-    const tipo=recorrente ? 'recorrente' : 'avulsa';
-    return (!filtroCategoria || categoria===filtroCategoria) &&
-           (!filtroTipo || tipo===filtroTipo);
-  });;
-  if(!contasFiltradas.length){
+  if(!contasDoMes.length){
     holder.innerHTML = `<div class="empty"><div class="glyph">▤</div><h3>Nenhuma conta neste mês</h3><p>Não há contas avulsas ou recorrentes cadastradas para este período.</p><button class="btn btn-primary" onclick="openContaModal()">+ Nova conta</button></div>`;
     return;
   }
